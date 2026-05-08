@@ -2,9 +2,9 @@
 # Phase 1: Environment Setup Dependencies
 
 # Core Deep Learning Framework (CUDA 12.1)
---extra-index-url https://download.pytorch.org/whl/cu121
-torch==2.3.0
-torchvision==0.18.0
+# --extra-index-url https://download.pytorch.org/whl/cu121
+# torch==2.3.0
+# torchvision==0.18.0
 
 # Transformers and Model Loading
 transformers==4.42.0
