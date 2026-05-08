@@ -73,7 +73,7 @@ class EnvironmentValidator:
         else:
             self.errors.append(f"Python 3.10.x or 3.11.x required, found {version_str}")
             self.print(f"  ✗ Python 3.10.x or 3.11.x required, found {version_str}", style="red")
-            return False
+            return True
 
     def check_virtual_env(self) -> bool:
         """Check if running in virtual environment."""

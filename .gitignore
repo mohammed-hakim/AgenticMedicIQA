@@ -33,7 +33,7 @@ env/
 htmlcov/
 
 # Logs and Runtime Data
-logs/
+#logs/
 *.log
 
 # Data and Cache
