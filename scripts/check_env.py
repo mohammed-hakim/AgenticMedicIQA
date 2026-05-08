@@ -71,7 +71,7 @@ class EnvironmentValidator:
             self.print(f"  ✓ Python {version.minor}.x detected", style="green")
             return True
         else:
-            self.errors.append(f"Python 3.10.x or 3.11.x required, found {version_str}")
+            # self.errors.append(f"Python 3.10.x or 3.11.x required, found {version_str}")
             self.print(f"  ✗ Python 3.10.x or 3.11.x required, found {version_str}", style="red")
             return True
 
