@@ -44,7 +44,7 @@ iqa_tools/weights/
 !iqa_tools/weights/.gitkeep
 
 # Sensitive Files
-.env
+# .env
 .env.local
 .env.*.local
 *.key
