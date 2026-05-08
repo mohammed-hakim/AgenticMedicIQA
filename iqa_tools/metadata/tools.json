@@ -1,0 +1,291 @@
+{
+  "_comment": "IQA tool metadata with 5-parameter logistic transformation coefficients fitted on KADID-10k dataset (Sheikh et al., 2006). Descriptions follow paper Appendix A.3 format with complete narrative including strengths.",
+
+  "TOPIQ_FR": {
+    "type": "FR",
+    "description": "A top-down FR-IQA model that leverages high-level semantic guidance to focus on perceptually important distortion regions, thereby enhancing assessment accuracy. Best at evaluating: Blurs - Color distortions - Compression - Noise - Brightness change - Sharpness - Contrast.",
+    "logistic_params": {
+      "beta1": 21.73,
+      "beta2": 0.1147,
+      "beta3": 0.4721,
+      "beta4": 3.5654,
+      "beta5": 1.0094
+    }
+  },
+
+  "AHIQ": {
+    "type": "FR",
+    "description": "An attention-guided FR-IQA model tailored to assess distortions commonly introduced by generative models (e.g., GANs). It integrates hybrid mechanisms to improve robustness under complex generation artifacts. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 0.4280,
+      "beta2": -592.6356,
+      "beta3": -2.4819,
+      "beta4": 3.7677,
+      "beta5": 1.6143
+    }
+  },
+
+  "FSIM": {
+    "type": "FR",
+    "description": "A widely used FR-IQA model based on low-level feature similarity, such as phase congruency and gradient magnitude. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 265.7031,
+      "beta2": 23.2940,
+      "beta3": 1.2003,
+      "beta4": 1.9193,
+      "beta5": 133.0061
+    }
+  },
+
+  "LPIPS": {
+    "type": "FR",
+    "description": "A deep feature-based FR-IQA metric that computes perceptual similarity aligned with human visual judgments. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": -2.0915,
+      "beta2": 3.7543,
+      "beta3": -28.0133,
+      "beta4": -4.7251,
+      "beta5": 4.9710
+    }
+  },
+
+  "DISTS": {
+    "type": "FR",
+    "description": "A structural-texture hybrid similarity model that balances sensitivity to structural degradations and tolerance to textural variations. Best at evaluating: Blurs (Gaussian blur).",
+    "logistic_params": {
+      "beta1": -6.3380,
+      "beta2": -7.0362,
+      "beta3": -147.7936,
+      "beta4": -8.4514,
+      "beta5": 1.0753
+    }
+  },
+
+  "WaDIQaM_FR": {
+    "type": "FR",
+    "description": "A Siamese-network-based FR-IQA framework that applies weighted average pooling to fuse predictions from reference and distorted images for quality estimation. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 41.8259,
+      "beta2": 0.0997,
+      "beta3": -0.3064,
+      "beta4": 23.1826,
+      "beta5": 3.5943
+    }
+  },
+
+  "GMSD": {
+    "type": "FR",
+    "description": "Measures image quality by capturing local gradient magnitude deviations. Particularly effective in detecting visually important structural distortions. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": -5.9925,
+      "beta2": -23.3876,
+      "beta3": -59.6895,
+      "beta4": -13.8274,
+      "beta5": 1.0789
+    }
+  },
+
+  "SSIM": {
+    "type": "FR",
+    "description": "A foundational FR-IQA model based on luminance, contrast, and structure comparisons. Widely used in denoising, deblurring, and super-resolution evaluations. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 94.4202,
+      "beta2": 64.9155,
+      "beta3": 1.0664,
+      "beta4": 2.8744,
+      "beta5": 47.6819
+    }
+  },
+
+  "CKDN": {
+    "type": "FR",
+    "description": "A knowledge-distillation-based FR-IQA model that incorporates degraded reference images to improve robustness under partial-reference conditions. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 21.6375,
+      "beta2": 3.1301,
+      "beta3": 0.3708,
+      "beta4": -12.3232,
+      "beta5": 6.7834
+    }
+  },
+
+  "VIF": {
+    "type": "FR",
+    "description": "Evaluates quality based on the amount of visual information retained between reference and distorted images. It ranks highly for JPEG and JPEG2000 compression. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 0.4119,
+      "beta2": 49.7978,
+      "beta3": 0.2237,
+      "beta4": 2.4370,
+      "beta5": 1.3850
+    }
+  },
+
+  "QAlign": {
+    "type": "NR",
+    "description": "A state-of-the-art NR-IQA model based on multimodal large language models (MLLMs). Best at evaluating: Blurs (Gaussian blur, motion blur) - Color distortions (color shift, color quantization, color saturation) - Noise (white noise, color component noise, impulse noise, multiplicative noise) - Brightness change (brighten, darken, mean shift) - Spatial distortions (jitter, quantization) - Sharpness.",
+    "logistic_params": {
+      "beta1": 28.8204,
+      "beta2": 0.1469,
+      "beta3": 6.1941,
+      "beta4": -0.1906,
+      "beta5": 6.7863
+    }
+  },
+
+  "CLIPIQA": {
+    "type": "NR",
+    "description": "An NR-IQA method that leverages CLIP embeddings to measure semantic fidelity and perceptual degradation. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 21.7287,
+      "beta2": 0.1147,
+      "beta3": 0.4721,
+      "beta4": 3.5654,
+      "beta5": 1.0094
+    }
+  },
+
+  "UNIQUE": {
+    "type": "NR",
+    "description": "An uncertainty-aware NR-IQA model designed to estimate quality under both synthetic and real-world degradations. Best at evaluating: Blurs (lens blur) - Compression (JPEG, JPEG2000) - Noise (denoise artifact) - Spatial distortions (non-eccentricity patch, pixelate, color block) - Contrast.",
+    "logistic_params": {
+      "beta1": 52.5605,
+      "beta2": 0.2967,
+      "beta3": 0.8558,
+      "beta4": -2.9510,
+      "beta5": 5.6368
+    }
+  },
+
+  "HyperIQA": {
+    "type": "NR",
+    "description": "A self-adaptive architecture that decouples IQA into content understanding, perceptual rule learning, and score prediction, enabling flexible generalization across diverse image contexts. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 0.4071,
+      "beta2": 39.0359,
+      "beta3": 0.3155,
+      "beta4": 3.1472,
+      "beta5": 0.9815
+    }
+  },
+
+  "TReS": {
+    "type": "NR",
+    "description": "A transformer-based blind IQA model that incorporates relative ranking and consistency learning to capture both global and local perceptual features. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": -0.0550,
+      "beta2": 6559.4161,
+      "beta3": 48.9070,
+      "beta4": 0.0255,
+      "beta5": 1.1176
+    }
+  },
+
+  "MUSIQ": {
+    "type": "NR",
+    "description": "A multi-scale transformer that processes images at native resolutions and varying aspect ratios, offering robust perceptual quality prediction via hierarchical feature fusion. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 2.4078,
+      "beta2": -0.1123,
+      "beta3": 32.0686,
+      "beta4": 0.0734,
+      "beta5": -0.7363
+    }
+  },
+
+  "WaDIQaM_NR": {
+    "type": "NR",
+    "description": "Applies a deep neural network with weighted average pooling to perform NR-IQA by aggregating spatially varying local quality scores. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 106.9844,
+      "beta2": 1.2931,
+      "beta3": -0.3321,
+      "beta4": -31.9917,
+      "beta5": -8.0786
+    }
+  },
+
+  "DBCNN": {
+    "type": "NR",
+    "description": "A bilinear CNN architecture that extracts and fuses local-global representations for no-reference quality prediction. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 38.5349,
+      "beta2": 0.0851,
+      "beta3": 0.5159,
+      "beta4": 3.4921,
+      "beta5": 0.8607
+    }
+  },
+
+  "ARNIQA": {
+    "type": "NR",
+    "description": "A self-supervised NR-IQA model that learns a distortion manifold for quality representation, facilitating robust prediction without reference supervision. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 2.2932,
+      "beta2": -13.4107,
+      "beta3": 0.2884,
+      "beta4": 7.5144,
+      "beta5": -0.6274
+    }
+  },
+
+  "NIMA": {
+    "type": "NR",
+    "description": "Predicts aesthetic and technical quality using probability distributions derived from human ratings. Widely used for aesthetic assessment tasks. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 1.0129,
+      "beta2": 5.3579,
+      "beta3": 4.6475,
+      "beta4": 0.3207,
+      "beta5": 1.0601
+    }
+  },
+
+  "BRISQUE": {
+    "type": "NR",
+    "description": "A pioneering NSS-based NR-IQA model that captures spatial statistical deviations in natural images. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": -2.2106,
+      "beta2": 0.0684,
+      "beta3": 54.3418,
+      "beta4": 0.0050,
+      "beta5": 2.2728
+    }
+  },
+
+  "NIQE": {
+    "type": "NR",
+    "description": "An opinion-unaware metric based on statistical regularities in natural images. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": -1.4174,
+      "beta2": 0.8785,
+      "beta3": 6.9416,
+      "beta4": -0.0059,
+      "beta5": 2.7374
+    }
+  },
+
+  "MANIQA": {
+    "type": "NR",
+    "description": "Combines visual transformers with quality-aware attention mechanisms to evaluate GAN-generated distortions and other complex artifacts. This tool has no known strengths for any specific distortion.",
+    "logistic_params": {
+      "beta1": 0.6818,
+      "beta2": 27.4817,
+      "beta3": 0.2621,
+      "beta4": 2.5196,
+      "beta5": 1.5758
+    }
+  },
+
+  "LIQE": {
+    "type": "NR",
+    "description": "A multitask-learning-based blind IQA model that exploits auxiliary tasks to enhance distortion awareness. Best at evaluating: Color distortion (color diffusion).",
+    "logistic_params": {
+      "beta1": 0.1494,
+      "beta2": 7.1114,
+      "beta3": 3.2801,
+      "beta4": 0.6936,
+      "beta5": 0.8655
+    }
+  }
+}
