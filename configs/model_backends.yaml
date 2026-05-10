@@ -3,21 +3,21 @@
 
 # Planner module configuration
 planner:
-  backend: google.models/gemini-3.1-flash-lite  # Options: google.gemini-2.5-flash-lite, anthropic.claude-3.5-sonnet, qwen2.5-vl-local
+  backend: openai.Qwen/Qwen3-VL-2B-Instruct  # Options: google.gemini-2.5-flash-lite, anthropic.claude-3.5-sonnet, qwen2.5-vl-local
   temperature: 0.0
   max_tokens: 2048
   top_p: 0.1
 
 # Executor module configuration
 executor:
-  backend: google.models/gemini-3.1-flash-lite  # Options: google.gemini-2.5-flash-lite, qwen2.5-vl-local, anthropic.claude-3.5-sonnet
+  backend: openai.Qwen/Qwen3-VL-2B-Instruct  # Options: google.gemini-2.5-flash-lite, qwen2.5-vl-local, anthropic.claude-3.5-sonnet
   temperature: 0.0
   max_tokens: 4096
   top_p: 0.1
 
 # Summarizer module configuration
 summarizer:
-  backend: google.models/gemini-3.1-flash-lite  # Options: google.gemini-2.5-flash-lite, anthropic.claude-3.5-sonnet, qwen2.5-vl-local
+  backend: openai.Qwen/Qwen3-VL-2B-Instruct  # Options: google.gemini-2.5-flash-lite, anthropic.claude-3.5-sonnet, qwen2.5-vl-local
   temperature: 0.0
   max_tokens: 2048
   top_p: 0.1
