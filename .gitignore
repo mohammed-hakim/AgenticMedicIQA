@@ -26,7 +26,7 @@ venv/
 ENV/
 env/
 .venv
-
+.env
 # PyTest
 .pytest_cache/
 .coverage
