@@ -20,6 +20,9 @@ from langchain_core.runnables import RunnableConfig
 from src.agentic.state import AgenticIQAState, SummarizerOutput, ExecutorOutput
 from src.agentic.vlm_client import create_vlm_client, load_image
 from src.agentic.score_fusion import ScoreFusion
+from src.agentic.medical_domain import resolve_profile, summarizer_guidance
+from src.agentic.medical_metrics import format_medical_qc_for_prompt
+from src.agentic.privacy import redact_path
 from src.utils.config import load_model_backends
 from src.utils.json_utils import parse_json_response
 
@@ -189,6 +192,60 @@ PAPER_UNIFIED_PROMPT_TEMPLATE = """You are a **summarizer assistant** in an Imag
 The image: <image>"""
 
 
+# Medical variant of the unified prompt. The paper template above is kept
+# unchanged for backward compatibility; this template adds modality criteria,
+# a diagnostic-usability rubric, and auxiliary classical QC indicators.
+MEDICAL_UNIFIED_PROMPT_TEMPLATE = """You are a **medical image quality summarizer** in a Medical Image Quality Assessment (IQA) agent system. Your task is to integrate distortion analysis, IQA tool scores, and auxiliary classical QC indicators to produce a quality interpretation about acquisition quality and diagnostic usability, and to directly answer the user query.
+
+**User Query:** {query}
+
+**Your Input Includes:**
+
+1. **Distortion Analysis:** Severity, category, and explanation of detected distortions per region or globally.
+2. **IQA Tool Scores:** Quality scores (range 1 to 5) assigned by specific IQA tools. These tools were developed or calibrated on natural images and are uncalibrated proxies for medical acquisition quality.
+3. **Reference Type:** {reference_type}
+4. **Optional Prior Answer:** {prior_answer}
+5. **Medical Context and Auxiliary Indicators:** Modality profile, non-identifying source metadata, and classical QC indicators.
+6. **Optional Image Input:** You may also infer the answer from images and query directly.
+
+**Return a valid JSON object in the following format:**
+
+```json
+{{
+  "quality_reasoning": "<Summary of the reasoning process, combining modality criteria, distortions, severity, descriptions, tool scores, and auxiliary indicators>",
+  "final_answer": "<Concise and direct response to the user query based on the full reasoning>"
+}}
+```
+
+**Guidelines:**
+
+* In `"quality_reasoning"`:
+  * State the modality and anatomical region when they are known.
+  * Summarize the key artifacts and their impact on diagnostic usability.
+  * Reference tool scores and auxiliary indicators as supporting evidence, not as clinical measurements.
+  * Note when evidence is limited or when a classical indicator contradicts the visual assessment.
+  * Do not provide diagnoses, clinical findings, or treatment recommendations.
+
+* In `"final_answer"`:
+  * Provide a direct and concise judgment about image quality or diagnostic usability.
+  * For 1-5 scoring, follow the diagnostic-usability rubric in the medical context.
+  * If the image is non-diagnostic, recommend repeat acquisition or review by a qualified clinician.
+  * Use natural and human-readable phrasing.
+
+* Only return the JSON object. Do not include any markdown, commentary, or additional text.
+
+**Medical Context and Auxiliary Indicators:**
+{medical_context}
+
+**Distortion Analysis:**
+{distortion_analysis}
+
+**IQA Tool Scores:**
+{tool_scores}
+
+The image: <image>"""
+
+
 # ==================== Evidence Formatting ====================
 
 def format_evidence_unified(
@@ -270,6 +327,59 @@ def format_evidence_unified(
         "reference_type": reference_type,
         "prior_answer": prior_answer
     }
+
+
+def format_medical_context(
+    plan,
+    executor_output: Optional[ExecutorOutput]
+) -> str:
+    """Format modality guidance, source metadata, and classical QC indicators.
+
+    The output is inserted into ``MEDICAL_UNIFIED_PROMPT_TEMPLATE``. Only a
+    non-identifying metadata allow-list is included.
+    """
+    modality = getattr(plan, "modality", None) if plan is not None else None
+    profile = resolve_profile(modality)
+
+    lines = [summarizer_guidance(profile)]
+
+    qc = getattr(executor_output, "medical_qc", None) if executor_output else None
+    source = qc.get("source", {}) if isinstance(qc, dict) else {}
+
+    source_lines = []
+    if source:
+        if source.get("source_format"):
+            source_lines.append(f"source format: {source['source_format']}")
+        if source.get("modality_code"):
+            source_lines.append(f"DICOM modality code: {source['modality_code']}")
+        if source.get("body_part"):
+            source_lines.append(f"body part: {source['body_part']}")
+        if source.get("rows") and source.get("columns"):
+            source_lines.append(f"matrix: {source['columns']}x{source['rows']}")
+        if source.get("frames") and int(source["frames"]) > 1:
+            source_lines.append(f"frames: {source['frames']} (representative frame used)")
+        if source.get("slice_thickness_mm"):
+            source_lines.append(f"slice thickness: {source['slice_thickness_mm']} mm")
+        if source.get("window_center") is not None and source.get("window_width") is not None:
+            source_lines.append(
+                f"display window: center={source['window_center']}, width={source['window_width']}"
+            )
+        if source.get("shape"):
+            source_lines.append(f"volume shape: {source['shape']}")
+        if source.get("voxel_size_mm"):
+            source_lines.append(f"voxel size (mm): {source['voxel_size_mm']}")
+
+    if source_lines:
+        lines.append("Non-identifying source metadata: " + "; ".join(source_lines))
+
+    lines.append("Classical QC indicators (auxiliary, uncalibrated):")
+    lines.append(format_medical_qc_for_prompt(qc))
+    lines.append(
+        "Do not treat tool scores or classical indicators as clinical measurements. "
+        "Do not provide a diagnosis."
+    )
+
+    return "\n".join(lines)
 
 
 # ==================== Replanning Decision Logic ====================
@@ -401,7 +511,7 @@ def summarizer_node(
 
         logger.info(f"Task type: {plan.task_type}")
         logger.info(f"Query: {query}")
-        logger.info(f"Image: {image_path}")
+        logger.info(f"Image: {redact_path(image_path)}")
 
         # Load configuration
         try:
@@ -473,18 +583,22 @@ def summarizer_node(
             previous_result=previous_result
         )
 
-        logger.info(f"Using unified prompt template (paper specification)")
+        logger.info(f"Using medical unified prompt template")
         logger.info(f"Reference type: {evidence['reference_type']}")
         if iteration_count > 0:
             logger.info(f"Replanning iteration {iteration_count}, prior answer included")
 
-        # Render unified prompt template
-        prompt = PAPER_UNIFIED_PROMPT_TEMPLATE.format(
+        # Build medical context: modality rubric, source metadata, auxiliary QC.
+        medical_context = format_medical_context(plan, executor_output)
+
+        # Render medical unified prompt template
+        prompt = MEDICAL_UNIFIED_PROMPT_TEMPLATE.format(
             query=query,
             distortion_analysis=evidence["distortion_analysis"],
             tool_scores=evidence["tool_scores"],
             reference_type=evidence["reference_type"],
-            prior_answer=evidence["prior_answer"]
+            prior_answer=evidence["prior_answer"],
+            medical_context=medical_context
         )
 
         logger.debug(f"Prompt length: {len(prompt)} characters")

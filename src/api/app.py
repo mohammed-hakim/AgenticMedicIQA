@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     global pipeline_wrapper
 
     # Startup
-    logger.info("Starting AgenticIQA API server...")
+    logger.info("Starting Medical AgenticIQA API server...")
 
     # Initialize pipeline wrapper
     pipeline_wrapper = PipelineWrapper()
@@ -52,8 +52,12 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="AgenticIQA API",
-    description="REST API for Image Quality Assessment using Agentic Framework",
+    title="Medical AgenticIQA API",
+    description=(
+        "REST API for medical image acquisition quality and diagnostic-usability "
+        "assessment using an agentic framework. This is not a medical device and "
+        "does not provide diagnoses."
+    ),
     version=__version__,
     lifespan=lifespan
 )
@@ -149,9 +153,12 @@ async def assess_image_path(request: AssessPathRequest):
 async def root():
     """Root endpoint with API information."""
     return {
-        "name": "AgenticIQA API",
+        "name": "Medical AgenticIQA API",
         "version": __version__,
-        "description": "REST API for Image Quality Assessment",
+        "description": (
+            "Medical image acquisition quality and diagnostic-usability assessment. "
+            "Not a medical device; no diagnostic claims."
+        ),
         "docs_url": "/docs",
         "health_check": "/health"
     }

@@ -12,6 +12,8 @@ from typing import List, Optional, Dict, Any
 
 from PIL import Image
 
+from src.agentic.medical_io import get_display_image
+
 
 # ==================== Exceptions ====================
 
@@ -421,6 +423,9 @@ def load_image(image_path: str, max_size: Optional[int] = 2048) -> Image.Image:
     """
     Load image from file path.
 
+    Supports raster images (JPG/PNG/TIFF/BMP), DICOM files, and NIfTI volumes.
+    Medical files are rendered to a cached PNG before loading.
+
     Args:
         image_path: Path to image file
         max_size: Maximum size (longest edge) for resizing. None to disable resizing.
@@ -431,39 +436,7 @@ def load_image(image_path: str, max_size: Optional[int] = 2048) -> Image.Image:
     Raises:
         ValueError: If file format is unsupported or file doesn't exist
     """
-    path = Path(image_path)
-
-    if not path.exists():
-        raise ValueError(f"Image file not found: {image_path}")
-
-    # Check file extension
-    valid_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-    if path.suffix.lower() not in valid_extensions:
-        raise ValueError(
-            f"Unsupported image format: {path.suffix}. "
-            f"Supported formats: {', '.join(valid_extensions)}"
-        )
-
-    # Load image
-    try:
-        image = Image.open(path)
-
-        # Convert to RGB if necessary (handle RGBA, grayscale, etc.)
-        if image.mode not in ('RGB', 'RGBA'):
-            image = image.convert('RGB')
-
-        # Resize if necessary
-        if max_size and max(image.size) > max_size:
-            # Calculate new size preserving aspect ratio
-            ratio = max_size / max(image.size)
-            new_size = tuple(int(dim * ratio) for dim in image.size)
-            image = image.resize(new_size, Image.Resampling.LANCZOS)
-            print(f"Warning: Resized image from {image.size} to {new_size} (max_size={max_size})")
-
-        return image
-
-    except Exception as e:
-        raise ValueError(f"Failed to load image {image_path}: {e}")
+    return get_display_image(image_path, max_size=max_size)
 
 
 # ==================== Factory Function ====================

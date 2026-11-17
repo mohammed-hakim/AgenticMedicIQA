@@ -1,4 +1,4 @@
-# AgenticIQA Requirements
+# Medical AgenticIQA Requirements
 # Phase 1: Environment Setup Dependencies
 
 # Core Deep Learning Framework (CUDA 12.1)
@@ -28,6 +28,15 @@ numpy
 scipy
 scikit-image
 einops
+
+# Medical image ingestion (file-level DICOM and NIfTI)
+pydicom>=2.4,<4.0
+nibabel>=5.0,<6.0
+# Optional: compressed DICOM transfer syntaxes
+# pylibjpeg
+# pylibjpeg-openjpeg
+# pylibjpeg-libjpeg
+# pylibjpeg-rle
 
 # API Clients for VLMs
 openai>=2.0.0,<3.0.0  # Updated for httpx 0.28+ compatibility

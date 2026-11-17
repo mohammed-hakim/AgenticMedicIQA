@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Example client for AgenticIQA REST API.
+Example client for Medical AgenticIQA REST API.
 
 Demonstrates how to call the API endpoints using Python requests library.
 
@@ -55,10 +55,9 @@ def example_path_based_assessment():
     print("="*60)
 
     # Create a temporary test image
-    # with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-    #     create_test_image(tmp.name, color=(128, 128, 128))
-    #     image_path = tmp.name
-    image_path = '/data/wujiawei/CVPR/data/all_in_one/LOL/test/low/493.png'
+    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+        create_test_image(tmp.name, color=(128, 128, 128))
+        image_path = tmp.name
     print(f"Using image path: {image_path}")
 
     # Prepare the request
@@ -187,7 +186,7 @@ def example_error_handling():
 def main():
     """Run all examples."""
     print("\n" + "="*60)
-    print(" AgenticIQA API Client Examples")
+    print(" Medical AgenticIQA API Client Examples")
     print("="*60)
     print(f"\nAPI Server: {API_BASE_URL}")
     print("\nMake sure the API server is running:")
@@ -216,7 +215,7 @@ def main():
     print("\n" + "="*60)
     print(" Testing Pipeline Execution")
     print("="*60)
-    print("\nNote: These tests will execute the full AgenticIQA pipeline")
+    print("\nNote: These tests will execute the full Medical AgenticIQA pipeline")
     print("and may take 30-60 seconds per request.\n")
 
     example_path_based_assessment()

@@ -15,23 +15,28 @@ from PIL import Image
 from src.agentic.state import AgenticIQAState, ExecutorOutput, DistortionAnalysis, ToolExecutionLog
 from src.agentic.vlm_client import create_vlm_client, load_image
 from src.agentic.tool_registry import ToolRegistry, ToolExecutionError
+from src.agentic.medical_domain import (
+    CANONICAL_DISTORTION_TYPES,
+    VALID_DISTORTION_TYPES,
+    analysis_guidance,
+    detection_guidance,
+    resolve_profile,
+    tool_selection_guidance,
+)
+from src.agentic.medical_io import get_medical_metadata
+from src.agentic.medical_metrics import compute_medical_qc
+from src.agentic.privacy import redact_path
 from src.utils.config import load_model_backends
 from src.utils.json_utils import parse_json_response
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Valid distortion categories
-VALID_DISTORTION_TYPES = {
-    "Blurs", "Color distortions", "Compression", "Noise",
-    "Brightness change", "Sharpness", "Contrast", "Spatial distortions"
-}
-
 # ==================== Prompt Templates ====================
 
 DISTORTION_DETECTION_PROMPT_TEMPLATE = """System:
-You are an expert in distortion detection. Based on the user's query, identify all possible distortions need to be
-focused on to properly address the user's intent.
+You are an expert in distortion detection for medical images. Based on the user's query, identify all possible distortions
+that need to be focused on to properly address the user's intent about acquisition quality and diagnostic usability.
 Return a valid JSON object in the following format:
 {{
   "distortion_set": {{
@@ -39,16 +44,20 @@ Return a valid JSON object in the following format:
   }}
 }}
 Instructions:
-1. Focus your analysis on query scope. Describe distortions for each individually.
-2. Only include distortion types from the following valid categories: ["Blurs", "Color distortions", "Compression", "Noise", "Brightness change", "Sharpness", "Contrast"]
+1. Focus your analysis on query scope. Describe distortions for each region individually.
+2. Use canonical categories where possible: {valid_categories}. Modality-specific artifact names from the guidance below are also allowed.
+3. Only report artifacts that are visible or strongly supported by the image.
+4. Do not provide diagnoses or clinical findings.
+
+{medical_guidance}
 
 User:
 User's query: {query}
 The image: <image>"""
 
 DISTORTION_ANALYSIS_PROMPT_TEMPLATE = """System:
-You are a distortion analysis expert. Your task is to assess the severity and visual impact of various distortion
-types for different regions of an image or the entire image.
+You are a distortion analysis expert for medical images. Your task is to assess the severity and visual impact of various distortion
+types for different regions of an image or the entire image, in terms of acquisition quality and diagnostic usability.
 The distortion information: {distortion_set}
 Return a valid JSON object in the following format:
 {{
@@ -65,15 +74,17 @@ Return a valid JSON object in the following format:
 Instructions:
 1. Base your analysis on the listed distortion types and consider the user question.
 2. Use "none" if a distortion is barely or not visible.
-3. Keep explanations short and focused on visual quality. Focus solely on analyzing visual distortion effects.
+3. Keep explanations short and focused on visual quality and diagnostic usability. Do not provide diagnoses.
+
+{medical_guidance}
 
 User:
 User's query: {query}
 The image: <image>"""
 
 TOOL_SELECTION_PROMPT_TEMPLATE = """System:
-You are a tool executor. Your task is to assign the most appropriate IQA tool to each visual distortion type,
-based on the descriptions of the tools.
+You are a tool executor for medical image quality assessment. Your task is to assign the most appropriate IQA tool to each
+visual distortion type, based on the descriptions of the tools.
 The distortion information: {distortion_set}.
 The available tools: {tool_description}.
 Return a valid JSON object in the following format:
@@ -85,7 +96,10 @@ Return a valid JSON object in the following format:
   }}
 }}
 Instructions:
-For each distortion, choose the tool whose description suggests it performs best for that type of distortion."""
+For each distortion, choose the tool whose description suggests it performs best for that type of distortion.
+The preferred-metric list below is guidance only; choose from the available tools.
+
+{medical_guidance}"""
 
 
 # ==================== Subtask Functions ====================
@@ -94,7 +108,8 @@ def distortion_detection_subtask(
     query: str,
     images: List[Image.Image],
     vlm_client,
-    max_retries: int = 3
+    max_retries: int = 3,
+    profile: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, List[str]]]:
     """
     Detect distortions in the image using VLM.
@@ -104,11 +119,17 @@ def distortion_detection_subtask(
         images: List of images (test + optional reference)
         vlm_client: VLM client instance
         max_retries: Maximum retry attempts
+        profile: Optional modality profile
 
     Returns:
         Distortion set dict or None if detection fails
     """
-    prompt = DISTORTION_DETECTION_PROMPT_TEMPLATE.format(query=query)
+    profile = profile or resolve_profile(None)
+    prompt = DISTORTION_DETECTION_PROMPT_TEMPLATE.format(
+        query=query,
+        valid_categories=", ".join(CANONICAL_DISTORTION_TYPES),
+        medical_guidance=detection_guidance(profile)
+    )
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -151,7 +172,8 @@ def distortion_analysis_subtask(
     images: List[Image.Image],
     distortion_set: Dict[str, List[str]],
     vlm_client,
-    max_retries: int = 3
+    max_retries: int = 3,
+    profile: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, List[DistortionAnalysis]]]:
     """
     Analyze distortion severity using VLM.
@@ -162,13 +184,16 @@ def distortion_analysis_subtask(
         distortion_set: Detected distortions
         vlm_client: VLM client instance
         max_retries: Maximum retry attempts
+        profile: Optional modality profile
 
     Returns:
         Distortion analysis dict or None if analysis fails
     """
+    profile = profile or resolve_profile(None)
     prompt = DISTORTION_ANALYSIS_PROMPT_TEMPLATE.format(
         query=query,
-        distortion_set=json.dumps(distortion_set)
+        distortion_set=json.dumps(distortion_set),
+        medical_guidance=analysis_guidance(profile)
     )
 
     for attempt in range(1, max_retries + 1):
@@ -213,7 +238,8 @@ def tool_selection_subtask(
     tool_registry: ToolRegistry,
     reference_available: bool,
     vlm_client,
-    max_retries: int = 3
+    max_retries: int = 3,
+    profile: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, Dict[str, str]]]:
     """
     Select appropriate IQA tools for each distortion using VLM.
@@ -226,6 +252,7 @@ def tool_selection_subtask(
         reference_available: Whether reference image is available
         vlm_client: VLM client instance
         max_retries: Maximum retry attempts
+        profile: Optional modality profile
 
     Returns:
         Selected tools dict or None if selection fails
@@ -235,9 +262,11 @@ def tool_selection_subtask(
     reference_mode = "FR" if reference_available else "NR"
     tool_description = tool_registry.get_tool_descriptions(reference_mode=reference_mode)
 
+    profile = profile or resolve_profile(None)
     prompt = TOOL_SELECTION_PROMPT_TEMPLATE.format(
         distortion_set=json.dumps(distortion_set),
-        tool_description=tool_description
+        tool_description=tool_description,
+        medical_guidance=tool_selection_guidance(profile)
     )
 
     # Add FR/NR guidance
@@ -392,6 +421,11 @@ def executor_node(
         logger.error(error_msg)
         return {"error": error_msg}
 
+    # Resolve modality profile (unknown modalities fall back to generic medical)
+    modality = getattr(plan, "modality", None)
+    profile = resolve_profile(modality)
+    logger.info(f"Using modality profile: {profile['key']}")
+
     # Load configuration
     try:
         if config is None:
@@ -453,6 +487,31 @@ def executor_node(
     # Initialize executor output
     executor_output = ExecutorOutput()
 
+    # Auxiliary classical QC indicators and non-identifying source metadata.
+    # These never replace or override the 1-5 tool/VLM score.
+    try:
+        source_metadata = get_medical_metadata(image_path)
+    except Exception as e:
+        source_metadata = {}
+        logger.warning(
+            f"Could not read image metadata for {redact_path(image_path)}: {e}"
+        )
+
+    try:
+        qc = compute_medical_qc(image_path)
+        qc["source"] = source_metadata
+        executor_output.medical_qc = qc
+        if qc.get("available"):
+            logger.info(
+                f"Classical QC indicators computed; flags={qc.get('heuristic_flags', [])}"
+            )
+        else:
+            logger.warning(qc.get("error", "Classical QC indicators unavailable"))
+    except Exception as e:
+        logger.warning(
+            f"Classical QC indicators failed for {redact_path(image_path)}: {e}"
+        )
+
     # Execute subtasks based on control flags
     control_flags = plan.plan
 
@@ -460,7 +519,7 @@ def executor_node(
     if control_flags.distortion_detection:
         logger.info("Running distortion detection subtask")
         distortion_set = distortion_detection_subtask(
-            query, images, vlm_client, max_retries
+            query, images, vlm_client, max_retries, profile=profile
         )
         executor_output.distortion_set = distortion_set
     else:
@@ -474,7 +533,8 @@ def executor_node(
 
         if distortion_set_for_analysis:
             distortion_analysis = distortion_analysis_subtask(
-                query, images, distortion_set_for_analysis, vlm_client, max_retries
+                query, images, distortion_set_for_analysis, vlm_client,
+                max_retries, profile=profile
             )
             executor_output.distortion_analysis = distortion_analysis
 
@@ -498,7 +558,7 @@ def executor_node(
                 selected_tools = tool_selection_subtask(
                     query, images, distortion_set_for_selection,
                     tool_registry, reference_path is not None,
-                    vlm_client, max_retries
+                    vlm_client, max_retries, profile=profile
                 )
                 if selected_tools is None:
                     error_msg = "Tool selection failed after all retries"

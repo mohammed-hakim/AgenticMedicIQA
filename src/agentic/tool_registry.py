@@ -369,11 +369,26 @@ class ToolRegistry:
         if tool_name not in self.tools:
             raise ToolExecutionError(f"Unknown tool: {tool_name}")
 
+        # DICOM/NIfTI inputs must be rendered to a cached PNG for pyiqa.
+        try:
+            from src.agentic.medical_io import get_display_path
+
+            effective_image_path = get_display_path(image_path)
+            effective_reference_path = (
+                get_display_path(reference_path) if reference_path else None
+            )
+        except Exception as e:
+            raise ToolExecutionError(
+                f"Tool {tool_name} could not prepare medical image input: {e}"
+            )
+
         # Check cache
-        cache_key = self._get_cache_key(tool_name, image_path, reference_path)
+        cache_key = self._get_cache_key(
+            tool_name, effective_image_path, effective_reference_path
+        )
         cached_result = self._check_cache(cache_key)
         if cached_result is not None:
-            logger.debug(f"Cache hit for {tool_name} on {Path(image_path).name}")
+            logger.debug(f"Cache hit for {tool_name} on {Path(effective_image_path).name}")
             return cached_result
 
         # Execute tool
@@ -390,14 +405,14 @@ class ToolRegistry:
 
             # Load images
             if tool_type == 'FR':
-                if reference_path is None:
+                if effective_reference_path is None:
                     raise ToolExecutionError(f"Tool {tool_name} requires reference image")
 
                 # Full-Reference scoring
-                raw_score = float(metric(image_path, reference_path).item())
+                raw_score = float(metric(effective_image_path, effective_reference_path).item())
             else:
                 # No-Reference scoring
-                raw_score = float(metric(image_path).item())
+                raw_score = float(metric(effective_image_path).item())
 
             # Handle NaN/Inf
             if not np.isfinite(raw_score):

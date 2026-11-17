@@ -14,6 +14,7 @@ from src.agentic.state import AgenticIQAState
 from src.agentic.nodes.planner import planner_node
 from src.agentic.nodes.executor import executor_node
 from src.agentic.nodes.summarizer import summarizer_node
+from src.agentic.privacy import redact_path
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -154,7 +155,9 @@ def run_pipeline(
     Returns:
         Final state after pipeline execution
     """
-    logger.info(f"Running pipeline: query='{query}', image='{image_path}'")
+    logger.info(
+        f"Running pipeline: query='{query}', image='{redact_path(image_path)}'"
+    )
 
     # Create initial state with iteration tracking
     initial_state: AgenticIQAState = {

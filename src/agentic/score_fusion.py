@@ -102,12 +102,19 @@ class ScoreFusion:
         if isinstance(vlm_output, dict) and "quality_probs" in vlm_output:
             quality_probs = vlm_output["quality_probs"]
 
-            # Parse log-probabilities for levels 1-5
+            # Parse log-probabilities for levels 1-5. Accept both string and
+            # integer keys because VLM JSON may serialize either form.
             log_probs = []
             for level in self.quality_levels:
-                log_p = quality_probs.get(str(level), -np.inf)
+                raw_log_p = quality_probs.get(
+                    str(level), quality_probs.get(level, -np.inf)
+                )
+                try:
+                    log_p = float(raw_log_p)
+                except (TypeError, ValueError):
+                    log_p = -np.inf
                 if not np.isfinite(log_p):
-                    logger.warning(f"Invalid log-prob for level {level}: {log_p}")
+                    logger.warning(f"Invalid log-prob for level {level}: {raw_log_p}")
                     log_p = -10.0  # Use large negative value instead of -inf
                 log_probs.append(log_p)
 
@@ -173,10 +180,16 @@ class ScoreFusion:
             return self.extract_vlm_probs({"quality_probs": vlm_output})
         elif mode == "classification":
             if isinstance(vlm_output, dict):
-                return self.extract_vlm_probs(vlm_output)
+                # Native probability/level payloads take priority; otherwise
+                # extract a grade from keys such as "final_answer".
+                if "quality_probs" in vlm_output or "quality_level" in vlm_output:
+                    return self.extract_vlm_probs(vlm_output)
+                parsed_level = self._parse_classification(vlm_output)
+                if parsed_level is not None:
+                    return self.extract_vlm_probs({"quality_level": parsed_level})
             else:
                 parsed_level = self._parse_classification(vlm_output)
-                if parsed_level:
+                if parsed_level is not None:
                     return self.extract_vlm_probs({"quality_level": parsed_level})
 
         return self._uniform_probabilities()

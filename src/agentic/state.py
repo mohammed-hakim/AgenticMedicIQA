@@ -1,5 +1,5 @@
 """
-Pydantic models for LangGraph state management in the AgenticIQA pipeline.
+Pydantic models for LangGraph state management in the Medical AgenticIQA pipeline.
 Defines type-safe state models for Planner, Executor, and Summarizer modules.
 """
 
@@ -9,6 +9,12 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from typing_extensions import NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from src.agentic.medical_domain import (
+    QUALITY_RUBRIC,
+    VALID_DISTORTION_TYPES,
+)
+from src.agentic.medical_io import SUPPORTED_IMAGE_EXTENSIONS
 
 
 # ==================== Planner Models ====================
@@ -68,6 +74,15 @@ class PlannerOutput(BaseModel):
         None,
         description="List of specific tools explicitly requested by user, or null if none mentioned"
     )
+    modality: Optional[str] = Field(
+        None,
+        description=(
+            "Medical modality profile inferred by the Planner "
+            "(e.g., 'radiography', 'ct', 'mri', 'ultrasound', 'mammography', "
+            "'fundus_oct', 'dermatology', 'histopathology'). Null or unknown "
+            "values fall back to the generic medical profile."
+        )
+    )
     distortion_source: Literal["explicit", "inferred"] = Field(
         ...,
         description="Whether distortions are explicitly mentioned or need to be inferred"
@@ -83,9 +98,10 @@ class PlannerOutput(BaseModel):
                 {
                     "task_type": "IQA",
                     "reference_type": "No-Reference",
-                    "required_object_names": ["vehicle"],
-                    "required_distortions": {"vehicle": ["Sharpness"]},
+                    "required_object_names": ["chest"],
+                    "required_distortions": {"chest": ["Motion artifact"]},
                     "required_tools": None,
+                    "modality": "radiography",
                     "distortion_source": "explicit",
                     "plan": {
                         "distortion_detection": False,
@@ -119,12 +135,11 @@ class PlannerInput(BaseModel):
         if not path.is_file():
             raise ValueError(f"Image path is not a file: {v}")
 
-        # Check file extension
-        valid_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-        if path.suffix.lower() not in valid_extensions:
+        # Check file extension (raster, DICOM, or NIfTI)
+        if not any(path.name.lower().endswith(ext) for ext in SUPPORTED_IMAGE_EXTENSIONS):
             raise ValueError(
                 f"Invalid image format: {path.suffix}. "
-                f"Supported formats: {', '.join(valid_extensions)}"
+                f"Supported formats: {', '.join(sorted(SUPPORTED_IMAGE_EXTENSIONS))}"
             )
         return v
 
@@ -141,12 +156,11 @@ class PlannerInput(BaseModel):
         if not path.is_file():
             raise ValueError(f"Reference image path is not a file: {v}")
 
-        # Check file extension
-        valid_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-        if path.suffix.lower() not in valid_extensions:
+        # Check file extension (raster, DICOM, or NIfTI)
+        if not any(path.name.lower().endswith(ext) for ext in SUPPORTED_IMAGE_EXTENSIONS):
             raise ValueError(
                 f"Invalid reference image format: {path.suffix}. "
-                f"Supported formats: {', '.join(valid_extensions)}"
+                f"Supported formats: {', '.join(sorted(SUPPORTED_IMAGE_EXTENSIONS))}"
             )
         return v
 
@@ -208,16 +222,13 @@ class DistortionAnalysis(BaseModel):
     @field_validator('type')
     @classmethod
     def validate_distortion_type(cls, v: str) -> str:
-        """Validate that distortion type is from valid categories."""
-        valid_types = {
-            "Blurs", "Color distortions", "Compression", "Noise",
-            "Brightness change", "Sharpness", "Contrast", "Spatial distortions"
-        }
-        if v not in valid_types:
+        """Validate that distortion type is a canonical or medical artifact type."""
+        if v not in VALID_DISTORTION_TYPES:
             # Log warning but don't fail - VLM might use slight variations
             import logging
             logging.getLogger(__name__).warning(
-                f"Distortion type '{v}' not in standard categories: {valid_types}"
+                f"Distortion type '{v}' not in standard categories: "
+                f"{sorted(VALID_DISTORTION_TYPES)}"
             )
         return v
 
@@ -267,6 +278,13 @@ class ExecutorOutput(BaseModel):
         None,
         description="Quality scores per object → distortion → (tool_name, score)"
     )
+    medical_qc: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Auxiliary classical QC indicators and non-identifying source "
+            "metadata. These are not fused into the 1-5 quality score."
+        )
+    )
     tool_logs: List[ToolExecutionLog] = Field(
         default_factory=list,
         description="Execution logs for all tool runs"
@@ -278,23 +296,30 @@ class ExecutorOutput(BaseModel):
                 {
                     "distortion_set": None,
                     "distortion_analysis": {
-                        "vehicle": [
+                        "chest": [
                             {
-                                "type": "Blurs",
+                                "type": "Motion artifact",
                                 "severity": "severe",
-                                "explanation": "The vehicle edges appear smeared with strong motion blur."
+                                "explanation": "The chest edges appear smeared with strong motion artifact."
                             }
                         ]
                     },
                     "selected_tools": {
-                        "vehicle": {
-                            "Blurs": "QAlign"
+                        "chest": {
+                            "Motion artifact": "MUSIQ"
                         }
                     },
                     "quality_scores": {
-                        "vehicle": {
-                            "Blurs": ("QAlign", 2.15)
+                        "chest": {
+                            "Motion artifact": ("MUSIQ", 2.15)
                         }
+                    },
+                    "medical_qc": {
+                        "available": True,
+                        "kind": "classical_medical_qc",
+                        "metrics": {"focus_relative": 0.021},
+                        "heuristic_flags": ["low_local_sharpness"],
+                        "note": "Uncalibrated auxiliary indicators."
                     },
                     "tool_logs": []
                 }
@@ -315,7 +340,10 @@ class SummarizerOutput(BaseModel):
         None,
         ge=1.0,
         le=5.0,
-        description="Continuous quality score (1-5) for IQA scoring queries. None for MCQ/explanation queries."
+        description=(
+            "Continuous diagnostic-usability score (1-5) for scoring queries. "
+            "Rubric: " + " ".join(f"{score}={text}" for score, text in QUALITY_RUBRIC.items())
+        )
     )
     quality_reasoning: str = Field(
         ...,
@@ -381,13 +409,13 @@ class SummarizerOutput(BaseModel):
                 {
                     "final_answer": 2.73,
                     "quality_score": 2.73,
-                    "quality_reasoning": "The image shows moderate blur (severity: moderate, tool score: 2.6) affecting sharpness. Tool-augmented fusion yields score of 2.73, indicating fair quality.",
+                    "quality_reasoning": "The chest radiograph shows moderate motion artifact (severity: moderate, tool score: 2.6) affecting diagnostic usability. Tool-augmented fusion yields 2.73, indicating fair quality. Classical indicators are auxiliary and uncalibrated.",
                     "need_replan": False
                 },
                 {
                     "final_answer": "C",
                     "quality_score": None,
-                    "quality_reasoning": "The image shows moderate blur affecting sharpness, consistent with tool score of 2.6.",
+                    "quality_reasoning": "The image shows moderate motion artifact affecting diagnostic usability, consistent with the tool score of 2.6.",
                     "need_replan": False
                 },
                 {

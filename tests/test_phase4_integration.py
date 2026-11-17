@@ -40,17 +40,17 @@ def temp_image():
 def valid_plan_json():
     """Valid plan JSON for IQA task."""
     plan = {
-        "query_type": "IQA",
-        "query_scope": "Global",
-        "distortion_source": "Inferred",
-        "distortions": None,
-        "reference_mode": "No-Reference",
-        "required_tool": None,
+        "task_type": "IQA",
+        "required_object_names": ["Global"],
+        "distortion_source": "inferred",
+        "required_distortions": None,
+        "reference_type": "No-Reference",
+        "required_tools": None,
         "plan": {
             "distortion_detection": True,
             "distortion_analysis": True,
             "tool_selection": True,
-            "tool_execution": True
+            "tool_execute": True
         }
     }
     return json.dumps(plan)
@@ -227,7 +227,7 @@ class TestFullPipelineWithoutReplanning:
 
         # Verify complete flow
         assert "plan" in final_state
-        assert final_state["plan"].query_type == "IQA"
+        assert final_state["plan"].task_type == "IQA"
 
         assert "executor_evidence" in final_state
         assert final_state["executor_evidence"] is not None
@@ -271,33 +271,33 @@ class TestPipelineWithReplanning:
         """Test pipeline with one replanning iteration."""
         # First plan - incomplete
         plan_json_1 = json.dumps({
-            "query_type": "IQA",
-            "query_scope": ["car", "person"],
-            "distortion_source": "Inferred",
-            "distortions": None,
-            "reference_mode": "No-Reference",
-            "required_tool": None,
+            "task_type": "IQA",
+            "required_object_names": ["car", "person"],
+            "distortion_source": "inferred",
+            "required_distortions": None,
+            "reference_type": "No-Reference",
+            "required_tools": None,
             "plan": {
                 "distortion_detection": True,
                 "distortion_analysis": True,
                 "tool_selection": True,
-                "tool_execution": True
+                "tool_execute": True
             }
         })
 
         # Second plan - after replan
         plan_json_2 = json.dumps({
-            "query_type": "IQA",
-            "query_scope": ["car", "person"],
-            "distortion_source": "Inferred",
-            "distortions": {"car": ["Blurs"], "person": ["Noise"]},
-            "reference_mode": "No-Reference",
-            "required_tool": None,
+            "task_type": "IQA",
+            "required_object_names": ["car", "person"],
+            "distortion_source": "inferred",
+            "required_distortions": {"car": ["Blurs"], "person": ["Noise"]},
+            "reference_type": "No-Reference",
+            "required_tools": None,
             "plan": {
                 "distortion_detection": False,
                 "distortion_analysis": True,
                 "tool_selection": True,
-                "tool_execution": True
+                "tool_execute": True
             }
         })
 
@@ -316,10 +316,17 @@ class TestPipelineWithReplanning:
         mock_plan_load_image.return_value = MagicMock()
 
         # Mock Executor - incomplete first time, complete second time
+        distortion_set_response = json.dumps({
+            "distortion_set": {"car": ["Blurs"], "person": ["Noise"]}
+        })
+
         executor_json_incomplete = json.dumps({
             "distortion_analysis": {
                 "car": [{"type": "Blurs", "severity": "moderate", "explanation": "Blur detected"}]
                 # Missing 'person'
+            },
+            "selected_tools": {
+                "car": {"Blurs": "QAlign"}
             },
             "quality_scores": {
                 "car": {"Blurs": ["QAlign", 2.8]}
@@ -330,6 +337,10 @@ class TestPipelineWithReplanning:
             "distortion_analysis": {
                 "car": [{"type": "Blurs", "severity": "moderate", "explanation": "Blur detected"}],
                 "person": [{"type": "Noise", "severity": "slight", "explanation": "Noise detected"}]
+            },
+            "selected_tools": {
+                "car": {"Blurs": "QAlign"},
+                "person": {"Noise": "BRISQUE"}
             },
             "quality_scores": {
                 "car": {"Blurs": ["QAlign", 2.8]},
@@ -345,12 +356,14 @@ class TestPipelineWithReplanning:
 
         mock_exec_client = MagicMock()
         mock_exec_client.backend_name = "openai"
-        # First executor run (incomplete), then second run (complete)
+        # First executor run: detection, incomplete analysis, selection.
+        # Second executor run: complete analysis and selection.
         mock_exec_client.generate.side_effect = [
-            executor_json_incomplete, executor_json_incomplete,
-            executor_json_incomplete, executor_json_incomplete,
-            executor_json_complete, executor_json_complete,
-            executor_json_complete, executor_json_complete
+            distortion_set_response,
+            executor_json_incomplete,
+            executor_json_incomplete,
+            executor_json_complete,
+            executor_json_complete,
         ]
         mock_exec_vlm.return_value = mock_exec_client
 
@@ -480,17 +493,17 @@ class TestDisabledReplanning:
         """Test that max_replan_iterations=0 disables replanning."""
         # Use multi-object plan to test incomplete evidence
         plan_multi_objects = json.dumps({
-            "query_type": "IQA",
-            "query_scope": ["car", "person"],  # Multiple objects required
-            "distortion_source": "Explicit",
-            "distortions": {"car": ["Blurs"], "person": ["Noise"]},
-            "reference_mode": "No-Reference",
-            "required_tool": None,
+            "task_type": "IQA",
+            "required_object_names": ["car", "person"],  # Multiple objects required
+            "distortion_source": "explicit",
+            "required_distortions": {"car": ["Blurs"], "person": ["Noise"]},
+            "reference_type": "No-Reference",
+            "required_tools": None,
             "plan": {
                 "distortion_detection": False,
                 "distortion_analysis": True,
                 "tool_selection": True,
-                "tool_execution": True
+                "tool_execute": True
             }
         })
 
@@ -499,6 +512,9 @@ class TestDisabledReplanning:
             "distortion_analysis": {
                 "car": [{"type": "Blurs", "severity": "moderate", "explanation": "Blur detected"}]
                 # Missing 'person'
+            },
+            "selected_tools": {
+                "car": {"Blurs": "QAlign"}
             },
             "quality_scores": {
                 "car": {"Blurs": ["QAlign", 2.8]}

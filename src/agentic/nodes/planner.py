@@ -13,6 +13,9 @@ from langchain_core.runnables import RunnableConfig
 
 from src.agentic.state import AgenticIQAState, PlannerOutput, PlannerError
 from src.agentic.vlm_client import create_vlm_client, load_image
+from src.agentic.medical_domain import planner_guidance
+from src.agentic.medical_io import get_medical_metadata
+from src.agentic.privacy import redact_path
 from src.utils.config import load_model_backends
 
 # Configure logging
@@ -29,6 +32,7 @@ Return a valid JSON list in the following format:
   "required_object_names": ["<object1>", ...] or null,
   "required_distortions": {{"<object_name>" or "Global": ["<distortion1>", ...]}}}} or null,
   "required_tools": ["<tool_name1>", ...] or null,
+  "modality": "<medical modality profile key>" or null,
   "distortion_source": "explicit" or "inferred",
   "plan": {{
     "distortion_detection": true or false,
@@ -71,17 +75,23 @@ Return a valid JSON list in the following format:
 * "contrast" → **Contrast**
 * "noise", "noisy" → **Noise**
 
-### 5. Required Tools
+### 5. Medical Modality
+
+* Infer the medical modality profile from the image and the query.
+* Use one of the profile keys listed in the Medical Domain Guidance below.
+* If the modality is unknown or ambiguous, set `"modality"` to `null`; the system will use the generic medical profile.
+
+### 6. Required Tools
 
 * Include only if specific tool names are explicitly mentioned in the query (e.g., "use LPIPS").
 * Do **not** infer or recommend tools; if none mentioned, set to `null`.
 
-### 6. Distortion Source
+### 7. Distortion Source
 
 * If distortion-related terms are mentioned, set to `"explicit"`.
 * Otherwise, use `"inferred"`.
 
-### 7. Plan
+### 8. Plan
 
 * If `"task_type"` is `"Other"`, set all flags to **false**.
 * If distortions are mentioned, set `"distortion_detection"` to **false**; else **true**.
@@ -98,18 +108,52 @@ User's query: {query}
 The image: <image>"""
 
 
-def construct_planner_prompt(query: str, has_reference: bool = False) -> str:
+def construct_planner_prompt(
+    query: str,
+    has_reference: bool = False,
+    image_metadata: Optional[Dict[str, Any]] = None
+) -> str:
     """
     Construct planner prompt from template.
 
     Args:
         query: User's natural language query
         has_reference: Whether a reference image is provided
+        image_metadata: Optional non-identifying metadata extracted from the image
 
     Returns:
         Formatted prompt string
     """
     prompt = PLANNER_PROMPT_TEMPLATE.format(query=query)
+
+    guidance = planner_guidance()
+    prompt += (
+        "\n\n## Medical Domain Guidance\n"
+        "This pipeline assesses medical image acquisition quality and diagnostic "
+        "usability. Do not provide diagnoses, clinical findings, or treatment advice.\n\n"
+        "Available modality profiles:\n"
+        f"{guidance['modality_catalog']}\n\n"
+        f"{guidance['artifact_mapping']}\n\n"
+        f"Safety rules: {guidance['medical_safety']}"
+    )
+
+    if image_metadata:
+        metadata_lines = []
+        source_format = image_metadata.get("source_format")
+        if source_format:
+            metadata_lines.append(f"- source format: {source_format}")
+        if image_metadata.get("modality_code"):
+            metadata_lines.append(f"- DICOM modality code: {image_metadata['modality_code']}")
+        if image_metadata.get("body_part"):
+            metadata_lines.append(f"- body part: {image_metadata['body_part']}")
+        if image_metadata.get("modality_hint"):
+            metadata_lines.append(
+                f"- technical metadata suggests profile: {image_metadata['modality_hint']}"
+            )
+        if image_metadata.get("shape"):
+            metadata_lines.append(f"- volume shape: {image_metadata['shape']}")
+        if metadata_lines:
+            prompt += "\n\nImage metadata (non-identifying):\n" + "\n".join(metadata_lines)
 
     # Add note about reference image if provided
     if has_reference:
@@ -195,6 +239,15 @@ def planner_node(
         logger.error(error_msg)
         return {"error": error_msg}
 
+    # Load non-identifying metadata (DICOM/NIfTI/raster)
+    image_metadata: Dict[str, Any] = {}
+    try:
+        image_metadata = get_medical_metadata(image_path)
+    except Exception as e:
+        logger.warning(
+            f"Could not read image metadata for {redact_path(image_path)}: {e}"
+        )
+
     # Load images
     try:
         images = [load_image(image_path)]
@@ -224,7 +277,11 @@ def planner_node(
         return {"error": error_msg}
 
     # Construct prompt
-    prompt = construct_planner_prompt(query, has_reference=reference_path is not None)
+    prompt = construct_planner_prompt(
+        query,
+        has_reference=reference_path is not None,
+        image_metadata=image_metadata
+    )
 
     # Attempt generation with retries
     last_error = None
@@ -246,7 +303,15 @@ def planner_node(
             # Parse and validate output
             plan = parse_planner_output(response)
 
-            logger.info(f"Planner succeeded: task_type={plan.task_type}, required_objects={plan.required_object_names}")
+            # Fall back to technical metadata when the VLM does not infer a modality.
+            if not plan.modality and image_metadata.get("modality_hint"):
+                plan = plan.model_copy(update={"modality": image_metadata["modality_hint"]})
+
+            logger.info(
+                f"Planner succeeded: task_type={plan.task_type}, "
+                f"modality={plan.modality or 'generic_medical'}, "
+                f"required_objects={plan.required_object_names}"
+            )
 
             # Check if this is a replanning iteration
             # If "plan" already exists in state, this is a replan - increment iteration

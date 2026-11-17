@@ -1,5 +1,5 @@
 # Model Backend Configuration
-# This file defines the VLM backends for each module in the AgenticIQA pipeline
+# This file defines the VLM backends for each module in the Medical AgenticIQA pipeline
 
 # Planner module configuration
 planner:

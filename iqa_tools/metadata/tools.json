@@ -1,5 +1,5 @@
 {
-  "_comment": "IQA tool metadata with 5-parameter logistic transformation coefficients fitted on KADID-10k dataset (Sheikh et al., 2006). Descriptions follow paper Appendix A.3 format with complete narrative including strengths.",
+  "_comment": "IQA tool metadata with 5-parameter logistic transformation coefficients fitted on KADID-10k natural images (Sheikh et al., 2006). Descriptions follow paper Appendix A.3 format with complete narrative including strengths. Medical caveat: these metrics were developed or calibrated on natural images. In Medical AgenticIQA they are relative acquisition-quality proxies, not clinically validated or modality-calibrated measurements. Do not change the coefficients without recalibration.",
 
   "TOPIQ_FR": {
     "type": "FR",

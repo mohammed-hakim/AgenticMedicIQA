@@ -11,13 +11,14 @@ from fastapi import HTTPException
 
 from src.agentic.graph import run_pipeline
 from src.agentic.state import AgenticIQAState
+from src.agentic.privacy import redact_path
 from src.api.schemas import AssessResponse, ExecutionMetadata
 
 logger = logging.getLogger(__name__)
 
 
 class PipelineWrapper:
-    """Wrapper for AgenticIQA pipeline execution."""
+    """Wrapper for Medical AgenticIQA pipeline execution."""
 
     def __init__(self, pipeline_config: Optional[Dict[str, Any]] = None):
         """
@@ -68,7 +69,9 @@ class PipelineWrapper:
         start_time = time.time()
 
         try:
-            logger.info(f"Running pipeline: query='{query}', image='{image_path}'")
+            logger.info(
+                f"Running pipeline: query='{query}', image='{redact_path(image_path)}'"
+            )
 
             # Execute pipeline
             final_state: AgenticIQAState = run_pipeline(

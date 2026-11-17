@@ -1,0 +1,9 @@
+{"sample_id": "chest_xray_001", "query": "Rate the diagnostic quality of this chest radiograph and describe any acquisition artifacts.", "image_path": "data/raw/chest_xray.dcm"}
+{"sample_id": "ct_abdomen_001", "query": "Is this CT slice affected by noise, motion, or metal artifact?", "image_path": "data/raw/ct_abdomen.dcm"}
+{"sample_id": "mri_brain_001", "query": "Assess the diagnostic usability of this brain MRI slice and note any ghosting or aliasing.", "image_path": "data/raw/brain_mri.nii.gz"}
+{"sample_id": "ultrasound_001", "query": "Does this ultrasound image have adequate gain and contrast for interpretation?", "image_path": "data/raw/ultrasound.jpg"}
+{"sample_id": "mammogram_001", "query": "Evaluate positioning and image quality for this mammogram.", "image_path": "data/raw/mammogram.png"}
+{"sample_id": "fundus_001", "query": "Is this fundus photograph well focused and evenly illuminated?", "image_path": "data/raw/fundus.jpg"}
+{"sample_id": "dermoscopy_001", "query": "Assess sharpness, lighting, and color consistency in this dermoscopy image.", "image_path": "data/raw/dermoscopy.jpg"}
+{"sample_id": "histopathology_001", "query": "Check focus and stain consistency in this histopathology image.", "image_path": "data/raw/histopathology.png"}
+{"sample_id": "full_reference_001", "query": "Compare this degraded radiograph with the reference and rate its quality.", "image_path": "data/raw/chest_xray_degraded.dcm", "reference_path": "data/raw/chest_xray_reference.dcm"}

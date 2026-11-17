@@ -1,5 +1,6 @@
 """Integration tests for Planner→Executor flow."""
 
+import json
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
@@ -103,20 +104,23 @@ class TestPlannerToExecutorFlow:
         mock_executor_client = MagicMock()
         mock_executor_client.backend_name = "openai"
 
-        # Mock distortion analysis response
-        mock_executor_client.generate.return_value = '''
-        {
-          "distortion_analysis": {
-            "vehicle": [
-              {
-                "type": "Blurs",
-                "severity": "severe",
-                "explanation": "Strong motion blur"
-              }
-            ]
-          }
-        }
-        '''
+        # Mock distortion analysis followed by tool selection response
+        mock_executor_client.generate.side_effect = [
+            json.dumps({
+                "distortion_analysis": {
+                    "vehicle": [
+                        {
+                            "type": "Blurs",
+                            "severity": "severe",
+                            "explanation": "Strong motion blur",
+                        }
+                    ]
+                }
+            }),
+            json.dumps({
+                "selected_tools": {"vehicle": {"Blurs": "QAlign"}}
+            }),
+        ]
         mock_executor_vlm.return_value = mock_executor_client
 
         # Mock tool registry

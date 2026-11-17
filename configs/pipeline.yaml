@@ -1,5 +1,5 @@
 # Pipeline Configuration
-# This file defines the orchestration settings for the AgenticIQA pipeline
+# This file defines the orchestration settings for the Medical AgenticIQA pipeline
 
 # Pipeline orchestration settings
 pipeline:
@@ -91,12 +91,31 @@ summarizer:
 data:
   # Input data settings
   input_format: jsonl  # Options: jsonl, json, csv
-  image_formats: [jpg, jpeg, png, bmp, tiff]
+  image_formats: [jpg, jpeg, png, bmp, tiff, tif, dcm, dicom, nii, nii.gz]
 
   # Output settings
   output_format: jsonl
   save_intermediate_results: true
   intermediate_dir: ${AGENTIC_LOG_ROOT:-logs}/intermediate
+
+# Medical ingestion and auxiliary QC settings
+medical:
+  # File-level DICOM/NIfTI support (single file or representative frame/slice)
+  enabled: true
+
+  # Cached PNG render directory. Rendered files are what the VLM and pyiqa read.
+  render_cache_dir: ${AGENTIC_RENDER_CACHE:-data/processed/render_cache}
+
+  # Classical QC indicators are auxiliary evidence only and are always computed.
+  classical_qc: true
+  # Fixed design invariant: classical QC is never fused into the 1-5 score.
+  fuse_classical_qc_into_score: false
+
+  # Safety invariants. These are always applied by the code; they are recorded
+  # here as configuration documentation, not as optional toggles. They do not
+  # guarantee HIPAA/GDPR compliance.
+  redact_paths_in_logs: true
+  strip_dicom_identifiers: true
 
 # Evaluation settings
 evaluation:

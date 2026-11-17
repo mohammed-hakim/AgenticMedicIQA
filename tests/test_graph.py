@@ -52,17 +52,17 @@ class TestPipelineExecution:
     def valid_plan_json(self):
         """Valid plan JSON."""
         return json.dumps({
-            "query_type": "IQA",
-            "query_scope": "Global",
-            "distortion_source": "Inferred",
-            "distortions": None,
-            "reference_mode": "No-Reference",
-            "required_tool": None,
+            "task_type": "IQA",
+            "reference_type": "No-Reference",
+            "required_object_names": ["Global"],
+            "required_distortions": None,
+            "required_tools": None,
+            "distortion_source": "inferred",
             "plan": {
                 "distortion_detection": True,
                 "distortion_analysis": True,
                 "tool_selection": True,
-                "tool_execution": True
+                "tool_execute": True
             }
         })
 
@@ -93,7 +93,7 @@ class TestPipelineExecution:
                 # Verify
                 assert "plan" in final_state
                 assert final_state["query"] == "What's the quality?"
-                assert final_state["plan"].query_type == "IQA"
+                assert final_state["plan"].task_type == "IQA"
 
 
 class TestDecideNextNode:

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-AgenticIQA Batch Inference Pipeline
+Medical AgenticIQA Batch Inference Pipeline
 
-Processes datasets in JSONL format through the complete Planner→Executor→Summarizer workflow
+Processes datasets in JSONL format through the complete Planner -> Executor -> Summarizer workflow
 with resume capability, progress tracking, structured logging, and error handling.
+The pipeline supports medical image quality assessment for raster images, DICOM files,
+and NIfTI volumes. It does not provide diagnoses.
 
 Usage:
     python run_pipeline.py --input data/processed/dataset.jsonl --output results/output.jsonl
@@ -31,7 +33,7 @@ from src.utils.execution_logger import ExecutionLogger, LogLevel, CostEstimator
 # Initialize Typer app and Rich console
 app = typer.Typer(
     name="run_pipeline",
-    help="AgenticIQA Batch Inference Pipeline",
+    help="Medical AgenticIQA Batch Inference Pipeline",
     add_completion=False
 )
 console = Console()
@@ -219,9 +221,9 @@ def main(
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate config and data without executing pipeline"),
 ):
     """
-    Run AgenticIQA batch inference pipeline on a dataset.
+    Run Medical AgenticIQA batch inference pipeline on a dataset.
     
-    Processes samples from INPUT_PATH through Planner→Executor→Summarizer workflow
+    Processes samples from INPUT_PATH through Planner -> Executor -> Summarizer workflow
     and writes results to OUTPUT_PATH in JSONL format.
     
     Example:
@@ -341,7 +343,7 @@ def main(
             # TODO: Add more detailed cost estimation based on average token counts
 
         console.print("\n" + "=" * 60)
-        console.print("[bold green]✓ Validation complete. Ready to run.[/bold green]")
+        console.print("[bold green]Validation complete. Ready to run.[/bold green]")
         console.print("[cyan]Remove --dry-run flag to execute the pipeline.[/cyan]")
         console.print("=" * 60 + "\n")
         return
@@ -398,7 +400,7 @@ def main(
                 write_result(output_path, output)
 
                 stats["success"] += 1
-                logger.info(f"✓ Completed {sample_id} in {execution_time:.2f}s")
+                logger.info(f"Completed {sample_id} in {execution_time:.2f}s")
 
                 # Log sample end (success)
                 if exec_logger:
@@ -413,7 +415,7 @@ def main(
             except Exception as e:
                 execution_time = time.time() - start_time
                 stats["errors"] += 1
-                logger.error(f"✗ Failed {sample_id}: {e}")
+                logger.error(f"Failed {sample_id}: {e}")
 
                 # Log sample end (error)
                 if exec_logger:

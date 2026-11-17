@@ -340,12 +340,12 @@ class TestSummarizerNode:
     def base_state(self, temp_image):
         """Create base state for tests."""
         plan = PlannerOutput(
-            query_type="IQA",
-            query_scope="Global",
-            distortion_source="Inferred",
-            distortions=None,
-            reference_mode="No-Reference",
-            required_tool=None,
+            task_type="IQA",
+            required_object_names=["Global"],
+            distortion_source="inferred",
+            required_distortions=None,
+            reference_type="No-Reference",
+            required_tools=None,
             plan=PlanControlFlags(
                 distortion_detection=True,
                 distortion_analysis=True,
@@ -425,7 +425,7 @@ class TestSummarizerNode:
     ):
         """Test summarizer node in explanation/QA mode."""
         # Change to Other query type for explanation mode
-        base_state["plan"].query_type = "Other"
+        base_state["plan"].task_type = "Other"
 
         # Setup mocks
         mock_config = Mock()
@@ -459,12 +459,12 @@ class TestSummarizerNode:
     def test_summarizer_node_missing_executor_evidence(self, temp_image):
         """Test that missing executor evidence returns error."""
         plan = PlannerOutput(
-            query_type="IQA",
-            query_scope="Global",
-            distortion_source="Inferred",
-            distortions=None,
-            reference_mode="No-Reference",
-            required_tool=None,
+            task_type="IQA",
+            required_object_names=["Global"],
+            distortion_source="inferred",
+            required_distortions=None,
+            reference_type="No-Reference",
+            required_tools=None,
             plan=PlanControlFlags(
                 distortion_detection=True,
                 distortion_analysis=True,
@@ -498,12 +498,12 @@ class TestSummarizerNode:
         """Test that insufficient evidence triggers replanning."""
         # Setup state with insufficient evidence
         plan = PlannerOutput(
-            query_type="IQA",
-            query_scope=["car", "person"],  # Multiple objects
-            distortion_source="Inferred",
-            distortions=None,
-            reference_mode="No-Reference",
-            required_tool=None,
+            task_type="IQA",
+            required_object_names=["car", "person"],  # Multiple objects
+            distortion_source="inferred",
+            required_distortions=None,
+            reference_type="No-Reference",
+            required_tools=None,
             plan=PlanControlFlags(
                 distortion_detection=True,
                 distortion_analysis=True,
