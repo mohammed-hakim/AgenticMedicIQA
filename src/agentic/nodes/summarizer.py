@@ -513,13 +513,17 @@ def summarizer_node(
         logger.info(f"Query: {query}")
         logger.info(f"Image: {redact_path(image_path)}")
 
-        # Load configuration
+        # Load configuration (runtime override or YAML default)
         try:
-            config_data = load_model_backends()
-            if not hasattr(config_data, 'summarizer'):
-                raise ValueError("summarizer section missing in model_backends.yaml")
+            configurable = config.get("configurable", {}) if config else {}
+            if "summarizer" in configurable:
+                summarizer_config = configurable["summarizer"]
+            else:
+                config_data = load_model_backends()
+                if not hasattr(config_data, 'summarizer'):
+                    raise ValueError("summarizer section missing in model_backends.yaml")
+                summarizer_config = config_data.summarizer
 
-            summarizer_config = config_data.summarizer
             backend_name = summarizer_config.backend
             temperature = getattr(summarizer_config, 'temperature', 0.0)
             max_tokens = getattr(summarizer_config, 'max_tokens', 512)

@@ -178,7 +178,9 @@ def run_pipeline(
 
     # Execute graph
     try:
-        final_state = compiled_graph.invoke(initial_state)
+        # Forward runtime config (including backend overrides) to LangGraph so
+        # node functions receive it through their RunnableConfig argument.
+        final_state = compiled_graph.invoke(initial_state, config=config or {})
         logger.info("Pipeline execution completed successfully")
 
         # Log replanning history if any

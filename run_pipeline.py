@@ -65,17 +65,24 @@ def load_jsonl(file_path: Path) -> list:
     return samples
 
 
-def apply_config_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict[str, Any]:
+def apply_config_overrides(config: Any, overrides: List[str]) -> Any:
     """
     Apply configuration overrides using dot notation.
 
+    Accepts either a plain dictionary or a Pydantic configuration model. When a
+    model is provided, it is dumped to a dictionary, updated, and revalidated so
+    invalid overrides fail with a clear configuration error.
+
     Args:
-        config: Configuration dictionary
-        overrides: List of override strings (e.g., ["planner.backend=gpt-4o-mini", "executor.temperature=0.5"])
+        config: Configuration dictionary or Pydantic model
+        overrides: List of override strings (e.g., ["planner.backend=openai.gpt-4o-mini", "executor.temperature=0.5"])
 
     Returns:
-        Updated configuration dictionary
+        Updated configuration in the same shape as the input
     """
+    is_model = hasattr(config, "model_dump") and callable(config.model_dump)
+    data = config.model_dump() if is_model else config
+
     for override in overrides:
         if '=' not in override:
             logger.warning(f"Invalid override format (expected KEY=VALUE): {override}")
@@ -85,9 +92,9 @@ def apply_config_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict
         keys = key_path.split('.')
 
         # Navigate to the nested location
-        current = config
+        current = data
         for key in keys[:-1]:
-            if key not in current:
+            if key not in current or not isinstance(current[key], dict):
                 current[key] = {}
             current = current[key]
 
@@ -109,7 +116,7 @@ def apply_config_overrides(config: Dict[str, Any], overrides: List[str]) -> Dict
 
         logger.info(f"Override applied: {key_path} = {current[final_key]}")
 
-    return config
+    return type(config)(**data) if is_model else data
 
 
 def get_processed_sample_ids(output_path: Path) -> Set[str]:
@@ -256,6 +263,15 @@ def main(
             logger.info(f"Applying {len(backend_override)} backend override(s)")
             config = apply_config_overrides(config, backend_override)
 
+        # Runtime config consumed by the LangGraph nodes.
+        runtime_config = {
+            "configurable": {
+                "planner": config.planner,
+                "executor": config.executor,
+                "summarizer": config.summarizer,
+            }
+        }
+
     except Exception as e:
         console.print(f"[red]Error loading configuration: {e}[/red]")
         raise typer.Exit(code=1)
@@ -390,7 +406,8 @@ def main(
                     query=query,
                     image_path=image_path,
                     reference_path=reference_path,
-                    max_replan_iterations=max_replan_iterations
+                    max_replan_iterations=max_replan_iterations,
+                    config=runtime_config
                 )
 
                 execution_time = time.time() - start_time
