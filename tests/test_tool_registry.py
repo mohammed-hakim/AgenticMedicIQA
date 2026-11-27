@@ -218,25 +218,61 @@ class TestScoreNormalization:
             assert np.isfinite(normalized)
 
     def test_normalize_5param_formula(self, temp_tools_json):
-        """Test that 5-parameter formula is applied correctly."""
+        """Test that the standard 5-parameter logistic formula is applied."""
         registry = ToolRegistry(metadata_path=temp_tools_json)
 
         # Test with a known raw score
         raw_score = 0.5
         normalized = registry.normalize_score("TOPIQ_FR", raw_score)
 
-        # Manually compute expected value using 5-parameter formula
-        # q̂ = β₁(½ - 1/(exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
+        # Manually compute expected value using the standard 5-parameter form:
+        # q̂ = β₁(½ - 1/(1 + exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
         beta1, beta2, beta3, beta4, beta5 = 21.73, 0.1147, 0.4721, 3.5654, 1.0094
         exponent = beta2 * (raw_score - beta3)
         exp_term = np.exp(exponent)
-        expected = beta1 * (0.5 - 1.0 / exp_term) + beta4 * raw_score + beta5
+        expected = beta1 * (0.5 - 1.0 / (1.0 + exp_term)) + beta4 * raw_score + beta5
 
         # Clip to [1, 5]
         expected = np.clip(expected, 1.0, 5.0)
 
         # Should match within floating point tolerance
         assert abs(normalized - expected) < 1e-6
+
+    def test_normalize_preserves_medical_image_ordering(self, temp_tools_json):
+        """Real UNIQUE scores should map to a sensible quality ordering.
+
+        Raw values below come from DRIMDB fundus images scored locally. This
+        guards against regressions to the old formula, which collapsed all
+        three values to 1.0.
+        """
+        registry = ToolRegistry(metadata_path=temp_tools_json)
+        # Replace the fixture's TOPIQ entry with the production UNIQUE
+        # coefficients so this test exercises the medical benchmark path.
+        registry.tools["UNIQUE"] = {
+            "type": "NR",
+            "logistic_params": {
+                "beta1": 52.5605,
+                "beta2": 0.2967,
+                "beta3": 0.8558,
+                "beta4": -2.9510,
+                "beta5": 5.6368,
+            },
+        }
+
+        good = registry.normalize_score("UNIQUE", 0.6143)
+        bad = registry.normalize_score("UNIQUE", -0.2489)
+        outlier = registry.normalize_score("UNIQUE", -0.8931)
+
+        assert good > bad > outlier
+        assert 1.0 <= outlier < bad < good <= 5.0
+
+    def test_excluded_tools_are_hidden(self, temp_tools_json, monkeypatch):
+        """AGENTIC_EXCLUDED_TOOLS should remove tools from selection."""
+        monkeypatch.setenv("AGENTIC_EXCLUDED_TOOLS", "QAlign")
+        registry = ToolRegistry(metadata_path=temp_tools_json)
+
+        assert registry.is_tool_available("QAlign") is False
+        assert "QAlign" not in registry.get_tool_descriptions()
 
     def test_normalize_numerical_stability_large_exponent(self, temp_tools_json):
         """Test numerical stability with very large positive exponent."""

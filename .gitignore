@@ -40,6 +40,8 @@ htmlcov/
 data/cache/
 data/raw/*/
 !data/raw/.gitkeep
+data/processed/drimdb/
+data/processed/*/images/
 iqa_tools/weights/
 !iqa_tools/weights/.gitkeep
 

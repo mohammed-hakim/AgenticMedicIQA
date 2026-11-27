@@ -4,7 +4,7 @@ Manages IQA tool metadata, execution, and score normalization.
 
 Score Normalization:
     Uses five-parameter monotonic logistic transformation (Sheikh et al., 2006):
-    q̂ = β₁(½ - 1/(exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
+    q̂ = β₁(½ - 1/(1 + exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
 
     where:
     - q̃: raw tool output
@@ -24,6 +24,7 @@ References:
 import hashlib
 import json
 import logging
+import os
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -61,7 +62,6 @@ class ToolRegistry:
         """
         if metadata_path is None:
             # Default to iqa_tools/metadata/tools.json
-            import os
             root = Path(os.environ.get('AGENTIC_ROOT', Path.cwd()))
             metadata_path = root / 'iqa_tools' / 'metadata' / 'tools.json'
 
@@ -73,6 +73,34 @@ class ToolRegistry:
         self.cache_misses = 0
 
         self._load_metadata()
+        self._apply_tool_exclusions()
+
+    def _apply_tool_exclusions(self) -> None:
+        """Hide tools listed in AGENTIC_EXCLUDED_TOOLS from selection and execution.
+
+        Some metric backends are impractical in CPU-only or offline environments
+        (for example, the multi-billion-parameter QAlign model). Excluding them
+        here keeps the VLM selector from choosing tools that cannot run in the
+        current deployment.
+        """
+        raw = os.environ.get("AGENTIC_EXCLUDED_TOOLS", "")
+        excluded = {name.strip() for name in raw.split(",") if name.strip()}
+        if not excluded:
+            return
+
+        unknown = sorted(excluded.difference(self.tools))
+        if unknown:
+            logger.warning(
+                "AGENTIC_EXCLUDED_TOOLS contains unknown tool(s): %s",
+                ", ".join(unknown),
+            )
+
+        removed = sorted(excluded.intersection(self.tools))
+        for name in removed:
+            self.tools.pop(name, None)
+
+        if removed:
+            logger.info("Excluded IQA tool(s): %s", ", ".join(removed))
 
     def _load_metadata(self) -> None:
         """Load tool metadata from JSON file."""
@@ -260,7 +288,7 @@ class ToolRegistry:
         Normalize tool output to [1, 5] scale using five-parameter monotonic logistic transformation.
 
         Formula (Sheikh et al., 2006):
-        q̂ = β₁(½ - 1/(exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
+        q̂ = β₁(½ - 1/(1 + exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
 
         where q̃ is the raw score and q̂ is the normalized score.
         Parameters (β₁, β₂, β₃, β₄, β₅) are fitted on KADID-10k dataset.
@@ -309,25 +337,25 @@ class ToolRegistry:
                 raise ValueError(f"Tool {tool_name} beta{i} must be numeric, got {type(beta)}")
 
         # Apply 5-parameter monotonic logistic transformation
-        # Formula: q̂ = β₁(½ - 1/(exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
+        # Formula: q̂ = β₁(½ - 1/(1 + exp(β₂(q̃ - β₃)))) + β₄q̃ + β₅
         try:
             exponent = beta2 * (raw_score - beta3)
 
             # Numerical stability: handle extreme exponents
             if exponent > 100:
-                # exp(exponent) → ∞, so 1/exp(exponent) → 0
+                # exp(exponent) → ∞, so 1/(1 + exp(exponent)) → 0
                 # Thus: β₁(½ - 0) + β₄q̃ + β₅ = β₁/2 + β₄q̃ + β₅
                 normalized = beta1 * 0.5 + beta4 * raw_score + beta5
                 logger.debug(f"Large exponent {exponent:.2f} for {tool_name}, using stable approximation")
             elif exponent < -100:
-                # exp(exponent) → 0, so 1/exp(exponent) → ∞
-                # Thus: β₁(½ - ∞) + β₄q̃ + β₅ (dominated by linear term)
-                normalized = beta4 * raw_score + beta5
+                # exp(exponent) → 0, so 1/(1 + exp(exponent)) → 1
+                # Thus: β₁(½ - 1) + β₄q̃ + β₅ = -β₁/2 + β₄q̃ + β₅
+                normalized = -beta1 * 0.5 + beta4 * raw_score + beta5
                 logger.debug(f"Small exponent {exponent:.2f} for {tool_name}, using stable approximation")
             else:
                 # Normal case: compute exp and apply formula
                 exp_term = np.exp(exponent)
-                normalized = beta1 * (0.5 - 1.0 / exp_term) + beta4 * raw_score + beta5
+                normalized = beta1 * (0.5 - 1.0 / (1.0 + exp_term)) + beta4 * raw_score + beta5
 
         except (OverflowError, FloatingPointError) as e:
             # Fallback for extreme numerical issues

@@ -38,14 +38,24 @@ def extract_quality_score(result: Dict) -> float:
     Extract quality score from pipeline result.
     
     Tries multiple locations:
-    1. summarizer_result.final_answer (if numeric)
-    2. fused_score from score fusion
-    3. tool scores average
+    1. summarizer_result.quality_score (canonical fused score)
+    2. summarizer_result.final_answer (if numeric)
+    3. top-level quality_score / fused_score
+    4. tool scores average
     """
     summarizer_result = result.get('summarizer_result', {})
     
-    # Try final_answer if it's numeric
+    # Canonical fused score from the Summarizer
     if isinstance(summarizer_result, dict):
+        quality_score = summarizer_result.get('quality_score')
+        try:
+            score = float(quality_score)
+            if 1.0 <= score <= 5.0:
+                return score
+        except (ValueError, TypeError):
+            pass
+
+        # Try final_answer if it's numeric
         final_answer = summarizer_result.get('final_answer', '')
         
         # Try to parse as number
@@ -58,12 +68,20 @@ def extract_quality_score(result: Dict) -> float:
         
         # Try letter grade mapping
         letter_to_score = {'A': 5.0, 'B': 4.0, 'C': 3.0, 'D': 2.0, 'E': 1.0}
-        if final_answer.strip().upper() in letter_to_score:
-            return letter_to_score[final_answer.strip().upper()]
+        if isinstance(final_answer, str):
+            letter = final_answer.strip().upper()
+            if letter in letter_to_score:
+                return letter_to_score[letter]
     
-    # Try fused_score
-    if 'fused_score' in result:
-        return float(result['fused_score'])
+    # Try top-level score fields copied by run_pipeline.py
+    for field in ('quality_score', 'fused_score'):
+        if field in result:
+            try:
+                score = float(result[field])
+                if 1.0 <= score <= 5.0:
+                    return score
+            except (ValueError, TypeError):
+                pass
     
     # Try tool scores average
     executor_evidence = result.get('executor_evidence', {})
@@ -189,14 +207,14 @@ def main():
     
     # Interpret results
     if srcc_pval < 0.05:
-        print(f"✓ SRCC is statistically significant (p < 0.05)")
+        print("SRCC is statistically significant (p < 0.05)")
     else:
-        print(f"✗ SRCC is not statistically significant (p >= 0.05)")
-    
+        print("SRCC is not statistically significant (p >= 0.05)")
+
     if plcc_pval < 0.05:
-        print(f"✓ PLCC is statistically significant (p < 0.05)")
+        print("PLCC is statistically significant (p < 0.05)")
     else:
-        print(f"✗ PLCC is not statistically significant (p >= 0.05)")
+        print("PLCC is not statistically significant (p >= 0.05)")
     
     print()
     

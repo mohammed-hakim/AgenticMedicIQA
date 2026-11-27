@@ -234,8 +234,11 @@ Common options:
 | `--verbose, -v` | Enable detailed logs |
 
 Result records include `sample_id`, the original query and paths, the plan,
-executor evidence (including `medical_qc`), the summarizer result, and timing
-metadata.
+executor evidence (including `medical_qc`), the summarizer result, timing
+metadata, and top-level `quality_score` / `final_answer` mirrors. Benchmark label
+fields (`mos`, `quality_label`, `dataset`, `split`) and manifest provenance
+(`sample_metadata`) are copied from the input record when present, so evaluation
+can join by `sample_id` without reopening the manifest.
 
 ### Python
 
@@ -443,6 +446,16 @@ python run_pipeline.py \
   --backend-override planner.backend=openai.gpt-4o-mini
 ```
 
+To hide unavailable or heavy tools from the Executor's selection prompt, set a
+comma-separated exclusion list:
+
+```bash
+export AGENTIC_EXCLUDED_TOOLS=QAlign,SomeOtherTool
+```
+
+Excluded tools remain in the registry file but are not offered to the VLM, and
+they cannot be selected for execution.
+
 ---
 
 ## Evaluation
@@ -450,15 +463,105 @@ python run_pipeline.py \
 The existing evaluation scripts can be used with user-provided ground truth:
 
 ```bash
-# SRCC / PLCC / KRCC against reference scores
-python scripts/eval_correlation.py --input results/medical_output.jsonl
+# SRCC / PLCC against reference scores (reads summarizer_result.quality_score first)
+python scripts/eval_correlation.py \
+  --input results/medical_output.jsonl \
+  --ground-truth data/processed/my_benchmark/ground_truth.jsonl
 
 # Multiple-choice accuracy, if your manifest has MCQ labels
 python scripts/eval_mcq_accuracy.py --input results/medical_output.jsonl
 ```
 
-Report results only for the data and protocol you actually evaluated. Do not describe
-them as clinical validation.
+For a full medical-IQA pilot report (SRCC, PLCC, Kendall tau, MAE, RMSE, ordinal
+accuracy, quadratic weighted kappa, confusion matrix, per-class recall, and
+bootstrap confidence intervals):
+
+```bash
+python scripts/eval_medical_iqa.py \
+  --input results/drimdb_30.jsonl \
+  --ground-truth data/processed/drimdb/ground_truth.jsonl \
+  --output results/drimdb_30_eval.json
+```
+
+The evaluator joins predictions and labels by `sample_id`. Prediction scores come
+from `summarizer_result.quality_score` in `auto` mode, with numeric
+`final_answer`, top-level score fields, and the mean normalized tool score as
+fallbacks. `--score-source` selects one source explicitly for ablations.
+
+### DRIMDB pilot
+
+[DRIMDB](https://www.researchgate.net/publication/282641760_DRIMDB_Diabetic_Retinopathy_Images_Database_Database_for_Quality_Testing_of_Retinal_Images)
+is a public retinal fundus image quality benchmark with 216 images labeled
+**Good (125)**, **Bad (69)**, and **Outlier (22)**. Because it has categorical
+labels rather than a continuous MOS, the preparation script maps the ordered
+classes to a pseudo-MOS:
+
+| DRIMDB label | Pseudo-MOS |
+|---|---|
+| Good | 5.0 |
+| Bad | 3.0 |
+| Outlier | 1.0 |
+
+This mapping supports rank correlation only. It is not a clinical score, and the
+spacing is arbitrary. MAE, RMSE, and accuracy are secondary descriptors. The
+Outlier class includes non-retinal images, so treating it as the lowest quality
+level is a protocol choice; the evaluator supports `--exclude-labels Outlier` for
+a Good-vs-Bad sensitivity analysis.
+
+The default pilot uses 10 images per class (30 total) with a fixed seed:
+
+```bash
+# One-time data download (Kaggle API credentials required)
+curl -L -o drimdb.zip \
+  https://www.kaggle.com/api/v1/datasets/download/subhajournal/drimdb-diabetic-retinopathy-images-database
+unzip -q drimdb.zip -d data/raw/drimdb
+
+# Build a deterministic stratified subset, labels, and flat image directory
+python scripts/data_prep/prepare_drimdb.py \
+  --data-dir data/raw/drimdb/DRIMDB \
+  --per-class 10 \
+  --seed 42
+
+# Run the pipeline with hosted VLM inference; QAlign needs a 7B model and is
+# excluded from tool selection for CPU-only runs.
+export AGENTIC_EXCLUDED_TOOLS=QAlign
+python run_pipeline.py \
+  --input data/processed/drimdb/manifest.jsonl \
+  --output results/drimdb_30.jsonl \
+  --max-replan 1 \
+  --backend-override planner.backend=openai.gpt-4o-mini \
+  --backend-override executor.backend=openai.gpt-4o-mini \
+  --backend-override summarizer.backend=openai.gpt-4o-mini
+
+# Evaluate rank correlation and ordinal agreement
+python scripts/eval_medical_iqa.py \
+  --input results/drimdb_30.jsonl \
+  --ground-truth data/processed/drimdb/ground_truth.jsonl \
+  --output results/drimdb_30_eval.json
+
+# Optional sensitivity analysis: drop Outlier images, which include non-retinal
+# content and make the ordinal placement of that class debatable.
+python scripts/eval_medical_iqa.py \
+  --input results/drimdb_30.jsonl \
+  --ground-truth data/processed/drimdb/ground_truth.jsonl \
+  --exclude-labels Outlier \
+  --output results/drimdb_30_eval_good_bad.json
+```
+
+On Windows PowerShell, set `$env:AGENTIC_EXCLUDED_TOOLS = "QAlign"` instead of
+using `export`.
+
+Notes:
+
+- Use only the 216 top-level originals. Some redistributions include a nested
+  `iwebalbumfiles` directory with thumbnails and album copies; the preparation
+  script ignores it.
+- `AGENTIC_EXCLUDED_TOOLS` is a comma-separated list of tool names hidden from
+  the Executor's tool-selection prompt.
+- Thirty images is a pilot, not a benchmark result. Confidence intervals will be
+  wide, and the subset is not a substitute for the full 216-image evaluation.
+- Report only the data and protocol actually evaluated. Do not describe these
+  results as clinical validation.
 
 ---
 
@@ -495,6 +598,9 @@ medical-agentic-iqa/
 │   └── metadata/tools.json
 ├── scripts/
 │   ├── check_env.py
+│   ├── data_prep/prepare_drimdb.py  # DRIMDB pilot subset + labels
+│   ├── eval_correlation.py
+│   ├── eval_medical_iqa.py          # SRCC/MAE/QWK report with bootstrap CIs
 │   ├── run_api.py
 │   └── verify_iqa_tools.py
 ├── src/
@@ -584,3 +690,7 @@ This project is an unofficial reproduction and medical adaptation inspired by th
 AgenticIQA paper and the IQA-PyTorch ecosystem. Refer to the original paper and
 upstream repositories for their citations and licenses. The bundled tool
 coefficients and model weights retain their original terms.
+
+The DRIMDB pilot uses the public Diabetic Retinopathy Image Database described by
+Şevik et al., *Journal of Biomedical Optics* (2014). Check the original dataset
+terms before redistribution.

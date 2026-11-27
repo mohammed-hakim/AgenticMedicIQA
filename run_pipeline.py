@@ -143,6 +143,30 @@ def get_processed_sample_ids(output_path: Path) -> Set[str]:
     return processed_ids
 
 
+# Sample fields copied to result records so evaluation can join predictions with
+# ground truth without keeping the input manifest open. Sample metadata is
+# renamed to avoid colliding with execution metadata.
+SAMPLE_PASSTHROUGH_FIELDS = (
+    "dataset",
+    "split",
+    "mos",
+    "quality_label",
+    "label",
+    "modality",
+)
+
+
+def copy_sample_fields(sample: Dict[str, Any], output: Dict[str, Any]) -> None:
+    """Copy label and provenance fields from a manifest sample into its result."""
+    for field in SAMPLE_PASSTHROUGH_FIELDS:
+        if field in sample:
+            output[field] = sample[field]
+
+    sample_metadata = sample.get("metadata")
+    if isinstance(sample_metadata, dict):
+        output["sample_metadata"] = sample_metadata
+
+
 def write_result(output_path: Path, result: Dict[str, Any]):
     """Write result to output file."""
     # Serialize to JSON
@@ -170,6 +194,7 @@ def serialize_state_for_output(state: Dict[str, Any], sample: Dict[str, Any], ex
         "image_path": state.get("image_path"),
         "reference_path": state.get("reference_path"),
     }
+    copy_sample_fields(sample, output)
     
     # Serialize plan (with JSON-compatible datetime serialization)
     plan = state.get("plan")
@@ -200,6 +225,14 @@ def serialize_state_for_output(state: Dict[str, Any], sample: Dict[str, Any], ex
             output["summarizer_result"] = result
         else:
             output["summarizer_result"] = str(result)
+
+        # Mirror the two evaluation-relevant fields at the top level. Older
+        # evaluators read top-level scores; the nested result remains canonical.
+        summarizer_dict = output["summarizer_result"]
+        if isinstance(summarizer_dict, dict):
+            for field in ("quality_score", "final_answer"):
+                if field in summarizer_dict:
+                    output[field] = summarizer_dict[field]
     
     # Add metadata
     output["metadata"] = {
@@ -449,12 +482,13 @@ def main(
                     "query": query,
                     "image_path": image_path,
                     "reference_path": reference_path,
-                    "metadata": {
-                        "execution_time_ms": round(execution_time * 1000, 2),
-                        "final_status": "error",
-                        "error_details": str(e),
-                        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-                    }
+                }
+                copy_sample_fields(sample, error_output)
+                error_output["metadata"] = {
+                    "execution_time_ms": round(execution_time * 1000, 2),
+                    "final_status": "error",
+                    "error_details": str(e),
+                    "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 }
                 try:
                     write_result(output_path, error_output)

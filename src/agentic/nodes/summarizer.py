@@ -38,6 +38,36 @@ class QueryType(Enum):
     EXPLANATION = "explanation"   # Descriptive explanation → text
 
 
+# Explicit score requests are deterministic. Checking these before the VLM
+# classification avoids misrouting benchmark prompts such as "Assign a quality
+# score from 1 to 5" to EXPLANATION mode, where the numeric score is lost.
+_EXPLICIT_SCORE_PATTERNS = (
+    re.compile(r"\b[1-5]\s*(?:-|–|—|to|\.\.\.|…)\s*[1-5]\b"),
+    re.compile(r"\b(?:assign|give|provide|return|report|output)\b[^.\n]{0,80}\b(?:score|rating)\b"),
+    re.compile(r"\bnumerical\s+(?:score|rating)\b"),
+    re.compile(r"\b(?:rate|score)\b[^.\n]{0,40}\b(?:on\s+a\s+scale|1\s*-\s*5|1\s+to\s+5)\b"),
+)
+
+
+def is_explicit_scoring_query(query: str) -> bool:
+    """Return True when the query explicitly requests a numeric score.
+
+    The numeric-scale patterns only count when the query also mentions quality,
+    scoring, or rating, so unrelated numeric ranges are not misclassified.
+    """
+    query_lower = query.lower()
+
+    if re.search(r"\b(?:quality|score|scoring|rating|rate)\b", query_lower):
+        if _EXPLICIT_SCORE_PATTERNS[0].search(query_lower):
+            return True
+
+    for pattern in _EXPLICIT_SCORE_PATTERNS[1:]:
+        if pattern.search(query_lower):
+            return True
+
+    return False
+
+
 def detect_query_type_with_vlm(query: str, vlm_client) -> QueryType:
     """
     Detect query type using VLM for more accurate intent recognition.
@@ -53,6 +83,11 @@ def detect_query_type_with_vlm(query: str, vlm_client) -> QueryType:
     if re.search(r'[A-E]\)', query) or "choose from" in query.lower():
         logger.info(f"Detected MCQ query (explicit options): {query[:50]}")
         return QueryType.MCQ
+
+    # Explicit numeric-score requests are unambiguous; skip VLM classification.
+    if is_explicit_scoring_query(query):
+        logger.info(f"Detected SCORING query (explicit score request): {query[:50]}")
+        return QueryType.SCORING
 
     # Use VLM for intent classification
     classification_prompt = f"""Analyze this image quality assessment query and classify its type.
@@ -113,6 +148,10 @@ def detect_query_type_rule_based(query: str) -> QueryType:
     # MCQ: explicit options
     if re.search(r'[A-E]\)', query) or "choose from" in query_lower:
         return QueryType.MCQ
+
+    # SCORING: explicit numeric score request
+    if is_explicit_scoring_query(query):
+        return QueryType.SCORING
 
     # SCORING: rate/score/assess/evaluate keywords
     if re.search(r'\b(rate|score|assess|evaluate)\b', query_lower):
