@@ -508,7 +508,15 @@ Outlier class includes non-retinal images, so treating it as the lowest quality
 level is a protocol choice; the evaluator supports `--exclude-labels Outlier` for
 a Good-vs-Bad sensitivity analysis.
 
-The default pilot uses 10 images per class (30 total) with a fixed seed:
+The default pilot uses 10 images per class (30 total) with a fixed seed. On a
+Linux host or Kaggle notebook, the whole flow can be run with:
+
+```bash
+bash scripts/run_drimdb_pilot.sh
+```
+
+Set `DRIMDB_DRY_RUN=1` to download and prepare the subset without running
+inference. The individual commands are:
 
 ```bash
 # One-time data download (Kaggle API credentials required)
@@ -602,6 +610,7 @@ medical-agentic-iqa/
 │   ├── eval_correlation.py
 │   ├── eval_medical_iqa.py          # SRCC/MAE/QWK report with bootstrap CIs
 │   ├── run_api.py
+│   ├── run_drimdb_pilot.sh          # end-to-end DRIMDB pilot (Linux/Kaggle)
 │   └── verify_iqa_tools.py
 ├── src/
 │   ├── agentic/
