@@ -56,7 +56,7 @@ CLASS_ORDER = ["Good", "Bad", "Outlier"]
 DEFAULT_QUERY = (
     "Assign a diagnostic quality score from 1 to 5 for this retinal fundus "
     "photograph, where 1 is unusable and 5 is diagnostic quality. "
-    "Return only the numerical score."
+    "Provide the score in the final_answer field."
 )
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
@@ -109,12 +109,12 @@ def select_class_images(
     return sorted(rng.sample(candidates, per_class))
 
 
-def choose_output_path(image_path: Path, output_dir: Path, relative_to: Path) -> str:
-    """Choose a portable path for the manifest."""
+def choose_output_path(image_path: Path, relative_to: Path) -> str:
+    """Choose a portable, forward-slash path for the manifest."""
     try:
-        return str(output_dir.relative_to(relative_to))
+        return image_path.relative_to(relative_to).as_posix()
     except ValueError:
-        return str(output_dir)
+        return image_path.as_posix()
 
 
 def build_subset(
@@ -171,11 +171,9 @@ def build_subset(
                 image_path = source
 
             if path_mode == "relative":
-                manifest_image_path = choose_output_path(
-                    image_path, image_path, repo_root
-                )
+                manifest_image_path = choose_output_path(image_path, repo_root)
             else:
-                manifest_image_path = str(image_path.resolve())
+                manifest_image_path = image_path.resolve().as_posix()
 
             entry = {
                 "sample_id": sample_id,
