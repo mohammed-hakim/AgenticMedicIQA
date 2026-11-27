@@ -119,8 +119,36 @@ def apply_config_overrides(config: Any, overrides: List[str]) -> Any:
     return type(config)(**data) if is_model else data
 
 
-def get_processed_sample_ids(output_path: Path) -> Set[str]:
-    """Extract sample_ids from existing output file for resume capability."""
+def is_successful_result(result: Dict[str, Any]) -> bool:
+    """Return True when a result contains usable pipeline output.
+
+    Error records are deliberately excluded from resume tracking so a later
+    ``--resume`` run retries them instead of skipping them forever.
+    """
+    metadata = result.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("final_status") == "error":
+        return False
+    return isinstance(result.get("summarizer_result"), dict) or result.get("quality_score") is not None
+
+
+def has_quality_score(result: Dict[str, Any]) -> bool:
+    """Return True when a result contains a numeric 1-5 quality score."""
+    if result.get("quality_score") is not None:
+        return True
+    summarizer_result = result.get("summarizer_result")
+    return isinstance(summarizer_result, dict) and summarizer_result.get("quality_score") is not None
+
+
+def get_processed_sample_ids(
+    output_path: Path,
+    require_quality_score: bool = False,
+) -> Set[str]:
+    """Extract sample_ids with successful results for resume capability.
+
+    When ``require_quality_score`` is set, successful-looking records without a
+    usable score are retried. This is useful for scoring benchmarks, where a
+    textual explanation is not an acceptable result.
+    """
     processed_ids = set()
     if not output_path.exists():
         return processed_ids
@@ -133,8 +161,10 @@ def get_processed_sample_ids(output_path: Path) -> Set[str]:
                     continue
                 try:
                     result = json.loads(line)
-                    if 'sample_id' in result:
-                        processed_ids.add(result['sample_id'])
+                    sample_id = result.get("sample_id")
+                    if sample_id and is_successful_result(result):
+                        if not require_quality_score or has_quality_score(result):
+                            processed_ids.add(sample_id)
                 except json.JSONDecodeError:
                     continue
     except Exception as e:
@@ -252,6 +282,11 @@ def main(
     output_path: Path = typer.Option(..., "--output", "-o", help="Output JSONL file for results"),
     config_path: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to pipeline config YAML"),
     resume: bool = typer.Option(False, "--resume", help="Resume from existing output (skip processed samples)"),
+    retry_missing_score: bool = typer.Option(
+        False,
+        "--retry-missing-score",
+        help="With --resume, retry successful records that lack a quality score",
+    ),
     max_samples: Optional[int] = typer.Option(None, "--max-samples", "-n", help="Limit number of samples to process"),
     max_replan_iterations: int = typer.Option(2, "--max-replan", help="Maximum replanning iterations per sample"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging (DEBUG level)"),
@@ -339,9 +374,13 @@ def main(
     # Handle resume mode
     processed_ids = set()
     if resume:
-        processed_ids = get_processed_sample_ids(output_path)
+        processed_ids = get_processed_sample_ids(
+            output_path, require_quality_score=retry_missing_score
+        )
         if processed_ids:
             console.print(f"[yellow]Resume mode: Skipping {len(processed_ids)} already-processed samples[/yellow]")
+        if retry_missing_score:
+            console.print("[yellow]Resume mode: records without a quality score will be retried[/yellow]")
     
     # Filter samples
     samples_to_process = [s for s in samples if s.get('sample_id') not in processed_ids]

@@ -537,9 +537,9 @@ python run_pipeline.py \
   --input data/processed/drimdb/manifest.jsonl \
   --output results/drimdb_30.jsonl \
   --max-replan 1 \
-  --backend-override planner.backend=openai.gpt-4o-mini \
-  --backend-override executor.backend=openai.gpt-4o-mini \
-  --backend-override summarizer.backend=openai.gpt-4o-mini
+  --backend-override planner.backend=openai.gpt-6-luna \
+  --backend-override executor.backend=openai.gpt-6-luna \
+  --backend-override summarizer.backend=openai.gpt-6-luna
 
 # Evaluate rank correlation and ordinal agreement
 python scripts/eval_medical_iqa.py \
@@ -566,6 +566,10 @@ Notes:
   script ignores it.
 - `AGENTIC_EXCLUDED_TOOLS` is a comma-separated list of tool names hidden from
   the Executor's tool-selection prompt.
+- `--resume` skips successful records only. Failed records are retried, and the
+  pilot runner also passes `--retry-missing-score` so successful-but-text-only
+  records are rescored. The evaluator keeps the best record per `sample_id`, so
+  earlier error lines do not hide a later successful result.
 - Thirty images is a pilot, not a benchmark result. Confidence intervals will be
   wide, and the subset is not a substitute for the full 216-image evaluation.
 - Report only the data and protocol actually evaluated. Do not describe these

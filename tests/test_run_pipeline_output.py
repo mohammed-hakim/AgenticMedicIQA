@@ -1,6 +1,14 @@
 """Tests for pipeline result serialization and benchmark field preservation."""
 
-from run_pipeline import copy_sample_fields, serialize_state_for_output
+import json
+
+from run_pipeline import (
+    copy_sample_fields,
+    get_processed_sample_ids,
+    has_quality_score,
+    is_successful_result,
+    serialize_state_for_output,
+)
 
 
 def _sample():
@@ -53,3 +61,59 @@ def test_serialize_state_preserves_labels_and_mirrors_scores():
     assert output["summarizer_result"]["quality_score"] == 4.25
     assert output["metadata"]["execution_time_ms"] == 1250.0
     assert output["metadata"]["final_status"] == "success"
+
+
+def test_resume_skips_successes_but_retries_errors(tmp_path):
+    output_path = tmp_path / "results.jsonl"
+    records = [
+        {
+            "sample_id": "good_001",
+            "summarizer_result": {"quality_score": 4.0},
+            "metadata": {"final_status": "success"},
+        },
+        {
+            "sample_id": "bad_001",
+            "metadata": {"final_status": "error", "error_details": "API failure"},
+        },
+        {
+            "sample_id": "bad_002",
+            "quality_score": 2.5,
+            "metadata": {"final_status": "success"},
+        },
+    ]
+    with open(output_path, "w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record) + "\n")
+
+    processed = get_processed_sample_ids(output_path)
+
+    assert processed == {"good_001", "bad_002"}
+    assert is_successful_result(records[0]) is True
+    assert is_successful_result(records[1]) is False
+
+
+def test_resume_can_retry_successes_without_a_quality_score(tmp_path):
+    output_path = tmp_path / "results.jsonl"
+    records = [
+        {
+            "sample_id": "scored",
+            "summarizer_result": {"quality_score": 4.0, "final_answer": 4.0},
+            "metadata": {"final_status": "success"},
+        },
+        {
+            "sample_id": "text_only",
+            "summarizer_result": {"quality_score": None, "final_answer": "Looks acceptable."},
+            "metadata": {"final_status": "success"},
+        },
+    ]
+    with open(output_path, "w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record) + "\n")
+
+    default_processed = get_processed_sample_ids(output_path)
+    scored_processed = get_processed_sample_ids(output_path, require_quality_score=True)
+
+    assert default_processed == {"scored", "text_only"}
+    assert scored_processed == {"scored"}
+    assert has_quality_score(records[0]) is True
+    assert has_quality_score(records[1]) is False

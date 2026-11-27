@@ -4,6 +4,7 @@ import pytest
 
 from scripts.eval_medical_iqa import (
     compute_metrics,
+    deduplicate_results,
     evaluate,
     extract_quality_score,
     extract_tool_mean,
@@ -142,6 +143,41 @@ def test_evaluate_joins_by_sample_id_and_bootstraps():
     assert report["bootstrap"]["n_bootstrap"] == 25
     assert report["bootstrap"]["confidence"] == pytest.approx(0.9)
     assert len(report["samples"]) == 4
+
+
+def test_deduplicate_results_prefers_score_bearing_success_over_error():
+    records = [
+        {"sample_id": "a", "metadata": {"final_status": "error"}},
+        _prediction("a", 4.0, "Good"),
+        _prediction("b", 2.0, "Bad"),
+        {"sample_id": "b", "metadata": {"final_status": "error"}},
+    ]
+
+    deduplicated, duplicates = deduplicate_results(records)
+
+    assert duplicates == 2
+    assert len(deduplicated) == 2
+    scores = {record["sample_id"]: record["summarizer_result"]["quality_score"] for record in deduplicated}
+    assert scores == {"a": 4.0, "b": 2.0}
+
+
+def test_evaluate_retries_after_error_record_are_counted_once():
+    predictions = [
+        {"sample_id": "a", "metadata": {"final_status": "error"}},
+        _prediction("a", 5.0, "Good"),
+        _prediction("b", 3.0, "Bad"),
+    ]
+    ground_truth = [
+        {"sample_id": "a", "mos": 5.0, "quality_label": "Good"},
+        {"sample_id": "b", "mos": 3.0, "quality_label": "Bad"},
+    ]
+
+    report = evaluate(predictions, ground_truth, n_bootstrap=0)
+
+    assert report["n_prediction_records_raw"] == 3
+    assert report["n_duplicate_prediction_records"] == 1
+    assert report["n_prediction_records"] == 2
+    assert report["n_matched"] == 2
 
 
 def test_evaluate_can_exclude_a_label_for_sensitivity_analysis():

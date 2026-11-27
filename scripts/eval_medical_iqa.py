@@ -209,6 +209,50 @@ def mos_to_label(mos: float) -> str:
     return "Outlier"
 
 
+def _result_rank(record: Dict[str, Any], score_source: str) -> int:
+    """Rank duplicate records, preferring records with a usable prediction."""
+    metadata = record.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("final_status") == "error":
+        return 0
+    score, _ = extract_quality_score(record, score_source=score_source)
+    if score is not None:
+        return 3
+    if isinstance(record.get("summarizer_result"), dict):
+        return 2
+    return 1
+
+
+def deduplicate_results(
+    records: Sequence[Dict[str, Any]],
+    score_source: str = "auto",
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Keep the best record per sample_id.
+
+    Resume runs append new results after old error records. This keeps the
+    highest-ranked record (successful and score-bearing over an error) and
+    prefers the later record when ranks tie.
+    """
+    best: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
+    order: List[str] = []
+    duplicates = 0
+
+    for index, record in enumerate(records):
+        sample_id = record.get("sample_id")
+        if not sample_id:
+            continue
+        sample_id = str(sample_id)
+        candidate = (_result_rank(record, score_source), index, record)
+        if sample_id not in best:
+            order.append(sample_id)
+            best[sample_id] = candidate
+        else:
+            duplicates += 1
+            if candidate[0] >= best[sample_id][0]:
+                best[sample_id] = candidate
+
+    return [best[sample_id][2] for sample_id in order], duplicates
+
+
 def quadratic_weighted_kappa(
     true_labels: Sequence[str],
     predicted_labels: Sequence[str],
@@ -382,6 +426,11 @@ def evaluate(
     debatable.
     """
     excluded_labels = {label.strip() for label in exclude_labels if label.strip()}
+    raw_prediction_count = len(prediction_records)
+    prediction_records, n_duplicate_predictions = deduplicate_results(
+        prediction_records, score_source=score_source
+    )
+
     truth_by_id: Dict[str, Dict[str, Any]] = {}
     if ground_truth_records:
         for record in ground_truth_records:
@@ -471,6 +520,8 @@ def evaluate(
 
     return {
         "n_prediction_records": len(prediction_records),
+        "n_prediction_records_raw": raw_prediction_count,
+        "n_duplicate_prediction_records": n_duplicate_predictions,
         "n_matched": len(matched),
         "n_ground_truth": len(truth_by_id) if truth_by_id else len(matched),
         "excluded_labels": sorted(excluded_labels),

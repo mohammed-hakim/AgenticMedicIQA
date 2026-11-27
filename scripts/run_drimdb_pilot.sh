@@ -10,7 +10,7 @@
 #   bash scripts/run_drimdb_pilot.sh
 #
 # Optional environment variables:
-#   AGENTIC_BACKEND          VLM backend (default: openai.gpt-4o-mini)
+#   AGENTIC_BACKEND          VLM backend (default: openai.gpt-6-luna)
 #   DRIMDB_PER_CLASS         Images per class (default: 10)
 #   DRIMDB_SEED              Sampling seed (default: 42)
 #   AGENTIC_EXCLUDED_TOOLS   Tools to hide (default: QAlign)
@@ -25,11 +25,17 @@ cd "$REPO_ROOT"
 export AGENTIC_ROOT="$REPO_ROOT"
 export PYTHONUNBUFFERED=1
 
-BACKEND="${AGENTIC_BACKEND:-openai.gpt-4o-mini}"
+BACKEND="${AGENTIC_BACKEND:-openai.gpt-6-luna}"
 PER_CLASS="${DRIMDB_PER_CLASS:-10}"
 SEED="${DRIMDB_SEED:-42}"
 OUTPUT="${DRIMDB_OUTPUT:-results/drimdb_30.jsonl}"
 export AGENTIC_EXCLUDED_TOOLS="${AGENTIC_EXCLUDED_TOOLS:-QAlign}"
+
+if [[ "$BACKEND" == openai.* ]] && [ -z "${OPENAI_API_KEY:-}" ]; then
+  echo "Error: OPENAI_API_KEY is not set; the pipeline would write error records." >&2
+  echo "Set the Kaggle secret or environment variable, then rerun." >&2
+  exit 1
+fi
 
 DATA_PARENT="data/raw/drimdb"
 DATASET_URL="https://www.kaggle.com/api/v1/datasets/download/subhajournal/drimdb-diabetic-retinopathy-images-database"
@@ -78,6 +84,7 @@ python run_pipeline.py \
   --input data/processed/drimdb/manifest.jsonl \
   --output "$OUTPUT" \
   --resume \
+  --retry-missing-score \
   --max-replan 1 \
   --backend-override "planner.backend=$BACKEND" \
   --backend-override "executor.backend=$BACKEND" \
