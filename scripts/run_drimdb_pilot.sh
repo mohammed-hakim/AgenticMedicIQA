@@ -42,9 +42,22 @@ if [ ! -d "$DATA_PARENT/DRIMDB" ] && [ ! -d "$DATA_PARENT/Good" ]; then
   echo "==> Downloading DRIMDB"
   mkdir -p "$DATA_PARENT"
   if [ ! -f "$DATA_PARENT/drimdb.zip" ]; then
-    curl -L --fail --retry 3 -o "$DATA_PARENT/drimdb.zip" "$DATASET_URL"
+    if ! curl -L --fail --retry 3 -o "$DATA_PARENT/drimdb.zip" "$DATASET_URL"; then
+      rm -f "$DATA_PARENT/drimdb.zip"
+      if command -v kaggle >/dev/null 2>&1; then
+        echo "==> curl failed; trying the Kaggle CLI"
+        kaggle datasets download \
+          -d subhajournal/drimdb-diabetic-retinopathy-images-database \
+          -p "$DATA_PARENT" --unzip
+      else
+        echo "Error: DRIMDB download failed and the kaggle CLI is unavailable." >&2
+        exit 1
+      fi
+    fi
   fi
-  unzip -q -o "$DATA_PARENT/drimdb.zip" -d "$DATA_PARENT"
+  if [ -f "$DATA_PARENT/drimdb.zip" ]; then
+    unzip -q -o "$DATA_PARENT/drimdb.zip" -d "$DATA_PARENT"
+  fi
 else
   echo "==> Using existing DRIMDB data under $DATA_PARENT"
 fi
