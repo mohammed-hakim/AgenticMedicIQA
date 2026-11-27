@@ -147,6 +147,52 @@ class TestOpenAIVLMClient:
         assert call_kwargs['max_tokens'] == 1000
         assert call_kwargs['top_p'] == 0.9
 
+    def test_reasoning_model_uses_reasoning_parameter_set(self, mock_openai, test_image):
+        """Reasoning models must not send unsupported sampling parameters."""
+        mock_class, mock_instance = mock_openai
+
+        client = OpenAIVLMClient(model_name="gpt-6-luna", api_key="test-key")
+        assert client.is_reasoning_model is True
+
+        response = client.generate(
+            "Test prompt",
+            [test_image],
+            temperature=0.5,
+            max_tokens=1000,
+            top_p=0.9
+        )
+
+        call_kwargs = mock_instance.chat.completions.create.call_args[1]
+        assert "max_completion_tokens" in call_kwargs
+        assert call_kwargs["max_completion_tokens"] >= 8192
+        assert "max_tokens" not in call_kwargs
+        assert "temperature" not in call_kwargs
+        assert "top_p" not in call_kwargs
+        assert call_kwargs["reasoning_effort"] == "low"
+
+    def test_reasoning_model_honors_reasoning_effort_override(self, mock_openai, test_image):
+        """OPENAI_REASONING_EFFORT and explicit kwargs can override the default."""
+        mock_class, mock_instance = mock_openai
+
+        client = OpenAIVLMClient(model_name="gpt-6-luna", api_key="test-key")
+        client.generate(
+            "Test prompt",
+            [test_image],
+            reasoning_effort="medium"
+        )
+
+        call_kwargs = mock_instance.chat.completions.create.call_args[1]
+        assert call_kwargs["reasoning_effort"] == "medium"
+
+    def test_reasoning_model_empty_response_raises(self, mock_openai, test_image):
+        """An empty reasoning-model response should surface as a parse error."""
+        mock_class, mock_instance = mock_openai
+        mock_instance.chat.completions.create.return_value.choices[0].message.content = None
+
+        client = OpenAIVLMClient(model_name="gpt-6-luna", api_key="test-key")
+        with pytest.raises(ResponseParseError):
+            client.generate("Test prompt", [test_image])
+
     def test_authentication_error(self, mock_openai, test_image):
         """Test handling authentication error."""
         mock_class, mock_instance = mock_openai

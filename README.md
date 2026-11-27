@@ -181,6 +181,9 @@ AGENTIC_RENDER_CACHE=${AGENTIC_DATA_ROOT}/processed/render_cache
 
 OPENAI_API_KEY=sk-...
 # or ANTHROPIC_API_KEY / GOOGLE_API_KEY
+
+# Optional: OpenAI reasoning-model controls for gpt-6-luna
+# OPENAI_REASONING_EFFORT=low   # none, low, medium (default), high, xhigh, max
 ```
 
 For local OpenAI-compatible inference:
@@ -570,6 +573,10 @@ Notes:
   pilot runner also passes `--retry-missing-score` so successful-but-text-only
   records are rescored. The evaluator keeps the best record per `sample_id`, so
   earlier error lines do not hide a later successful result.
+- The default pilot backend is `openai.gpt-6-luna`, an OpenAI reasoning model.
+  `OpenAIVLMClient` automatically uses `max_completion_tokens`, omits
+  unsupported sampling parameters, and defaults to `OPENAI_REASONING_EFFORT=low`.
+  Set `OPENAI_REASONING_EFFORT` to change this behavior.
 - Thirty images is a pilot, not a benchmark result. Confidence intervals will be
   wide, and the subset is not a substitute for the full 216-image evaluation.
 - Report only the data and protocol actually evaluated. Do not describe these

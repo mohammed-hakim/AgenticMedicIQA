@@ -15,6 +15,24 @@ from PIL import Image
 from src.agentic.medical_io import get_display_image
 
 
+# OpenAI reasoning models use a different Chat Completions parameter set:
+# `max_tokens` is replaced by `max_completion_tokens`, and custom sampling
+# parameters (temperature, top_p) are rejected. These prefixes cover the
+# o-series and the GPT-5/GPT-6 families. Non-OpenAI models served through an
+# OpenAI-compatible endpoint keep the legacy parameter path.
+_REASONING_MODEL_PREFIXES = ("o1", "o3", "o4", "gpt-5", "gpt-6")
+_REASONING_MIN_COMPLETION_TOKENS = 8192
+_DEFAULT_REASONING_EFFORT = "low"
+
+
+def is_reasoning_model(model_name: str) -> bool:
+    """Return True for models that use OpenAI's reasoning-token API."""
+    normalized = (model_name or "").strip().lower()
+    # Support provider-qualified names such as "openai/gpt-6-luna".
+    normalized = normalized.rsplit("/", 1)[-1]
+    return normalized.startswith(_REASONING_MODEL_PREFIXES)
+
+
 # ==================== Exceptions ====================
 
 class VLMClientError(Exception):
@@ -124,6 +142,8 @@ class OpenAIVLMClient(VLMClient):
 
         super().__init__(model_name, api_key, base_url)
 
+        self.is_reasoning_model = is_reasoning_model(model_name)
+
         # Lazy import to avoid dependency if not using OpenAI
         try:
             from openai import OpenAI
@@ -180,21 +200,55 @@ class OpenAIVLMClient(VLMClient):
                 "text": prompt
             })
 
+            # Build the request. Reasoning models (gpt-6-luna, o-series, GPT-5)
+            # reject `max_tokens` and non-default sampling parameters, so use the
+            # reasoning-specific parameter set for them and the legacy set for
+            # everything else. `max_completion_tokens` caps both reasoning and
+            # visible output tokens, so reserve enough headroom to avoid an
+            # empty response when the model spends tokens thinking.
+            messages = [{"role": "user", "content": content}]
+            request: Dict[str, Any] = {"model": self.model_name, "messages": messages}
+
+            reasoning_effort = kwargs.pop("reasoning_effort", None)
+
+            if self.is_reasoning_model:
+                request["max_completion_tokens"] = max(
+                    max_tokens, _REASONING_MIN_COMPLETION_TOKENS
+                )
+                effort = (
+                    reasoning_effort
+                    or os.getenv("OPENAI_REASONING_EFFORT")
+                    or _DEFAULT_REASONING_EFFORT
+                )
+                effort = (effort or "").strip().lower()
+                if effort:
+                    request["reasoning_effort"] = effort
+            else:
+                request["temperature"] = temperature
+                request["max_tokens"] = max_tokens
+                request["top_p"] = top_p
+                if reasoning_effort:
+                    request["reasoning_effort"] = reasoning_effort
+
+            request.update(kwargs)
+
             # Make API call
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{
-                    "role": "user",
-                    "content": content
-                }],
-                temperature=temperature,
-                max_tokens=max_tokens,
-                top_p=top_p,
-                **kwargs
-            )
+            response = self.client.chat.completions.create(**request)
 
             # Extract response text
-            return response.choices[0].message.content
+            if not response.choices:
+                raise ResponseParseError("OpenAI returned no choices")
+            message = response.choices[0].message
+            content_out = message.content
+            if content_out is None or not str(content_out).strip():
+                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                raise ResponseParseError(
+                    f"OpenAI returned an empty message "
+                    f"(finish_reason={finish_reason}); the model may have spent its "
+                    "completion budget on reasoning tokens. Increase "
+                    "max_completion_tokens or lower OPENAI_REASONING_EFFORT."
+                )
+            return content_out
 
         except Exception as e:
             # Handle specific OpenAI errors
